@@ -1,0 +1,41 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@11.6.2
+2 info using node@v24.13.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npmrc
+5 silly config load:file:/Users/sebastianpacheco/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm exec create-next-app@latest ./ --typescript --tailwind --eslint --app --src-dir --import-alias @/* --use-npm --no-git --yes
+8 verbose argv "exec" "--yes" "--" "create-next-app@latest" "./" "--typescript" "--tailwind" "--eslint" "--app" "--src-dir" "--import-alias" "@/*" "--use-npm" "--no-git" "--yes"
+9 verbose logfile logs-max:10 dir:/Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache/_logs/2026-04-08T13_39_34_465Z-
+10 verbose logfile /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache/_logs/2026-04-08T13_39_34_465Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 http fetch GET 200 https://registry.npmjs.org/npm 259ms
+14 http fetch GET 200 https://registry.npmjs.org/create-next-app 838ms (cache miss)
+15 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+16 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+17 silly idealTree buildDeps
+18 silly fetch manifest create-next-app@16.2.2
+19 silly packumentCache full:https://registry.npmjs.org/create-next-app cache-miss
+20 http fetch GET 200 https://registry.npmjs.org/create-next-app 405ms (cache miss)
+21 silly packumentCache full:https://registry.npmjs.org/create-next-app set size:undefined disposed:false
+22 silly placeDep ROOT create-next-app@16.2.2 OK for:  want: 16.2.2
+23 silly reify moves {}
+24 silly audit bulk request { 'create-next-app': [ '16.2.2' ] }
+25 http cache create-next-app@https://registry.npmjs.org/create-next-app/-/create-next-app-16.2.2.tgz 0ms (cache hit)
+26 silly tarball no local data for create-next-app@https://registry.npmjs.org/create-next-app/-/create-next-app-16.2.2.tgz. Extracting by manifest.
+27 http fetch GET 200 https://registry.npmjs.org/create-next-app/-/create-next-app-16.2.2.tgz 117ms (cache miss)
+28 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 198ms
+29 silly audit report {}
+30 verbose cwd /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2
+31 verbose os Darwin 25.3.0
+32 verbose node v24.13.0
+33 verbose npm  v11.6.2
+34 notice
+34 notice New [33mminor[39m version of npm available! [33m11.6.2[39m -> [34m11.12.1[39m
+34 notice Changelog: [34mhttps://github.com/npm/cli/releases/tag/v11.12.1[39m
+34 notice To update run: [4mnpm install -g npm@11.12.1[24m
+34 notice  { force: true, Symbol(proc-log.meta): true }
+35 verbose exit 0
+36 info ok

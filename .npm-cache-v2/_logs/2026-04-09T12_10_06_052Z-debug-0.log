@@ -1,0 +1,171 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@11.6.2
+2 info using node@v24.13.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/dashboard/.npmrc
+5 silly config load:file:/Users/sebastianpacheco/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm install
+8 verbose argv "install"
+9 verbose logfile logs-max:10 dir:/Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache-v2/_logs/2026-04-09T12_10_06_052Z-
+10 verbose logfile /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache-v2/_logs/2026-04-09T12_10_06_052Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 silly idealTree buildDeps
+14 silly fetch manifest next@latest
+15 silly packumentCache full:https://registry.npmjs.org/next cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/npm 239ms
+17 http fetch GET 200 https://registry.npmjs.org/next 496ms (cache miss)
+18 silly packumentCache full:https://registry.npmjs.org/next set size:undefined disposed:false
+19 silly fetch manifest @opentelemetry/api@^1.1.0
+20 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi cache-miss
+21 http fetch GET 200 https://registry.npmjs.org/@opentelemetry%2fapi 64ms (cache miss)
+22 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi set size:undefined disposed:false
+23 silly fetch manifest @playwright/test@^1.51.1
+24 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest cache-miss
+25 http fetch GET 200 https://registry.npmjs.org/@playwright%2ftest 271ms (cache miss)
+26 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest set size:undefined disposed:false
+27 silly fetch manifest babel-plugin-react-compiler@*
+28 silly packumentCache full:https://registry.npmjs.org/babel-plugin-react-compiler cache-miss
+29 http fetch GET 200 https://registry.npmjs.org/babel-plugin-react-compiler 66ms (cache miss)
+30 silly packumentCache full:https://registry.npmjs.org/babel-plugin-react-compiler set size:undefined disposed:false
+31 silly fetch manifest react@latest
+32 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+33 http fetch GET 200 https://registry.npmjs.org/react 170ms (cache miss)
+34 silly packumentCache full:https://registry.npmjs.org/react set size:undefined disposed:false
+35 silly fetch manifest react-dom@latest
+36 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+37 http fetch GET 200 https://registry.npmjs.org/react-dom 216ms (cache miss)
+38 silly packumentCache full:https://registry.npmjs.org/react-dom set size:undefined disposed:false
+39 silly fetch manifest sass@^1.3.0
+40 silly packumentCache full:https://registry.npmjs.org/sass cache-miss
+41 http fetch GET 200 https://registry.npmjs.org/sass 65ms (cache miss)
+42 silly packumentCache full:https://registry.npmjs.org/sass set size:undefined disposed:false
+43 silly fetch manifest three@^0.160.0
+44 silly packumentCache full:https://registry.npmjs.org/three cache-miss
+45 http fetch GET 200 https://registry.npmjs.org/three 56ms (cache miss)
+46 silly packumentCache full:https://registry.npmjs.org/three set size:undefined disposed:false
+47 silly fetch manifest @react-three/fiber@^8.15.0
+48 silly packumentCache full:https://registry.npmjs.org/@react-three%2ffiber cache-miss
+49 http fetch GET 200 https://registry.npmjs.org/@react-three%2ffiber 231ms (cache miss)
+50 silly packumentCache full:https://registry.npmjs.org/@react-three%2ffiber set size:undefined disposed:false
+51 silly fetch manifest expo@>=43.0
+52 silly packumentCache full:https://registry.npmjs.org/expo cache-miss
+53 http fetch GET 200 https://registry.npmjs.org/expo 101ms (cache miss)
+54 silly packumentCache full:https://registry.npmjs.org/expo set size:undefined disposed:false
+55 silly fetch manifest @expo/dom-webview@*
+56 silly packumentCache full:https://registry.npmjs.org/@expo%2fdom-webview cache-miss
+57 http fetch GET 200 https://registry.npmjs.org/@expo%2fdom-webview 207ms (cache miss)
+58 silly packumentCache full:https://registry.npmjs.org/@expo%2fdom-webview set size:undefined disposed:false
+59 silly fetch manifest react-native@*
+60 silly packumentCache full:https://registry.npmjs.org/react-native cache-miss
+61 http fetch GET 200 https://registry.npmjs.org/react-native 208ms (cache miss)
+62 silly packumentCache full:https://registry.npmjs.org/react-native set size:undefined disposed:false
+63 silly fetch manifest @react-native/jest-preset@0.85.0
+64 silly packumentCache full:https://registry.npmjs.org/@react-native%2fjest-preset cache-miss
+65 http fetch GET 200 https://registry.npmjs.org/@react-native%2fjest-preset 45ms (cache miss)
+66 silly packumentCache full:https://registry.npmjs.org/@react-native%2fjest-preset set size:undefined disposed:false
+67 silly fetch manifest @types/react@latest
+68 silly packumentCache full:https://registry.npmjs.org/@types%2freact cache-miss
+69 http fetch GET 200 https://registry.npmjs.org/@types%2freact 90ms (cache miss)
+70 silly packumentCache full:https://registry.npmjs.org/@types%2freact set size:undefined disposed:false
+71 silly fetch manifest @expo/metro-runtime@*
+72 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime cache-miss
+73 http fetch GET 200 https://registry.npmjs.org/@expo%2fmetro-runtime 95ms (cache miss)
+74 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime set size:undefined disposed:false
+75 silly fetch manifest react-native-webview@*
+76 silly packumentCache full:https://registry.npmjs.org/react-native-webview cache-miss
+77 http fetch GET 200 https://registry.npmjs.org/react-native-webview 88ms (cache miss)
+78 silly packumentCache full:https://registry.npmjs.org/react-native-webview set size:undefined disposed:false
+79 silly fetch manifest expo-asset@>=8.4
+80 silly packumentCache full:https://registry.npmjs.org/expo-asset cache-miss
+81 http fetch GET 200 https://registry.npmjs.org/expo-asset 52ms (cache miss)
+82 silly packumentCache full:https://registry.npmjs.org/expo-asset set size:undefined disposed:false
+83 silly fetch manifest expo-file-system@>=11.0
+84 silly packumentCache full:https://registry.npmjs.org/expo-file-system cache-miss
+85 http fetch GET 200 https://registry.npmjs.org/expo-file-system 61ms (cache miss)
+86 silly packumentCache full:https://registry.npmjs.org/expo-file-system set size:undefined disposed:false
+87 silly fetch manifest expo-gl@>=11.0
+88 silly packumentCache full:https://registry.npmjs.org/expo-gl cache-miss
+89 http fetch GET 200 https://registry.npmjs.org/expo-gl 205ms (cache miss)
+90 silly packumentCache full:https://registry.npmjs.org/expo-gl set size:undefined disposed:false
+91 silly fetch manifest react-native-reanimated@*
+92 silly packumentCache full:https://registry.npmjs.org/react-native-reanimated cache-miss
+93 http fetch GET 200 https://registry.npmjs.org/react-native-reanimated 113ms (cache miss)
+94 silly packumentCache full:https://registry.npmjs.org/react-native-reanimated set size:undefined disposed:false
+95 silly fetch manifest react-native-worklets@0.8.x
+96 silly packumentCache full:https://registry.npmjs.org/react-native-worklets cache-miss
+97 http fetch GET 200 https://registry.npmjs.org/react-native-worklets 49ms (cache miss)
+98 silly packumentCache full:https://registry.npmjs.org/react-native-worklets set size:undefined disposed:false
+99 silly fetch manifest @babel/core@*
+100 silly packumentCache full:https://registry.npmjs.org/@babel%2fcore cache-miss
+101 http fetch GET 200 https://registry.npmjs.org/@babel%2fcore 80ms (cache miss)
+102 silly packumentCache full:https://registry.npmjs.org/@babel%2fcore set size:undefined disposed:false
+103 silly fetch manifest @react-native/metro-config@*
+104 silly packumentCache full:https://registry.npmjs.org/@react-native%2fmetro-config cache-miss
+105 http fetch GET 200 https://registry.npmjs.org/@react-native%2fmetro-config 266ms (cache miss)
+106 silly packumentCache full:https://registry.npmjs.org/@react-native%2fmetro-config set size:undefined disposed:false
+107 silly fetch manifest react-native-web@*
+108 silly packumentCache full:https://registry.npmjs.org/react-native-web cache-miss
+109 http fetch GET 200 https://registry.npmjs.org/react-native-web 213ms (cache miss)
+110 silly packumentCache full:https://registry.npmjs.org/react-native-web set size:undefined disposed:false
+111 silly fetch manifest react@>=18 <19
+112 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+113 http cache https://registry.npmjs.org/react 8ms (cache hit)
+114 silly packumentCache full:https://registry.npmjs.org/react set size:6594137 disposed:false
+115 verbose stack Error: unable to resolve dependency tree
+115 verbose stack     at #failPeerConflict (/usr/local/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/build-ideal-tree.js:1420:25)
+115 verbose stack     at #loadPeerSet (/usr/local/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/build-ideal-tree.js:1413:29)
+115 verbose stack     at async #buildDepStep (/usr/local/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/build-ideal-tree.js:929:11)
+115 verbose stack     at async Arborist.buildIdealTree (/usr/local/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/build-ideal-tree.js:182:7)
+115 verbose stack     at async Promise.all (index 1)
+115 verbose stack     at async Arborist.reify (/usr/local/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/reify.js:114:5)
+115 verbose stack     at async Install.exec (/usr/local/lib/node_modules/npm/lib/commands/install.js:150:5)
+115 verbose stack     at async Npm.exec (/usr/local/lib/node_modules/npm/lib/npm.js:208:9)
+115 verbose stack     at async module.exports (/usr/local/lib/node_modules/npm/lib/cli/entry.js:67:5)
+116 error code ERESOLVE
+117 error ERESOLVE unable to resolve dependency tree
+118 error
+119 error While resolving: tribe-v2-dashboard@0.1.0
+119 error Found: react@19.2.5[2m[22m
+119 error [2mnode_modules/react[22m
+119 error   react@"latest" from the root project
+119 error   [95mpeer[39m react@"*" from expo@55.0.12[2m[22m
+119 error   [2mnode_modules/expo[22m
+119 error     peerOptional expo@">=43.0" from @react-three/fiber@8.18.0[2m[22m
+119 error     [2mnode_modules/@react-three/fiber[22m
+119 error       @react-three/fiber@"^8.15.0" from the root project
+119 error     [95mpeer[39m expo@"*" from @expo/dom-webview@55.0.5[2m[22m
+119 error     [2mnode_modules/@expo/dom-webview[22m
+119 error       peerOptional @expo/dom-webview@"*" from expo@55.0.12
+119 error     4 more (@expo/metro-runtime, expo-asset, expo-file-system, expo-gl)
+119 error   11 more (@expo/dom-webview, react-native, ...)
+119 error
+119 error Could not resolve dependency:
+119 error [95mpeer[39m react@">=18 <19" from @react-three/fiber@8.18.0[2m[22m
+119 error [2mnode_modules/@react-three/fiber[22m
+119 error   @react-three/fiber@"^8.15.0" from the root project
+119 error
+119 error Fix the upstream dependency conflict, or retry
+119 error this command with --force or --legacy-peer-deps
+119 error to accept an incorrect (and potentially broken) dependency resolution.
+120 error
+120 error
+120 error For a full report see:
+120 error /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache-v2/_logs/2026-04-09T12_10_06_052Z-eresolve-report.txt
+121 silly unfinished npm timer reify 1775736606275
+122 silly unfinished npm timer reify:loadTrees 1775736606275
+123 silly unfinished npm timer idealTree:buildDeps 1775736606280
+124 silly unfinished npm timer idealTree:#root 1775736606280
+125 verbose cwd /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/dashboard
+126 verbose os Darwin 25.3.0
+127 verbose node v24.13.0
+128 verbose npm  v11.6.2
+129 notice
+129 notice New [33mminor[39m version of npm available! [33m11.6.2[39m -> [34m11.12.1[39m
+129 notice Changelog: [34mhttps://github.com/npm/cli/releases/tag/v11.12.1[39m
+129 notice To update run: [4mnpm install -g npm@11.12.1[24m
+129 notice  { force: true, Symbol(proc-log.meta): true }
+130 verbose exit 1
+131 verbose code 1
+132 error A complete log of this run can be found in: /Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache-v2/_logs/2026-04-09T12_10_06_052Z-debug-0.log

@@ -1,0 +1,340 @@
+'Log files:
+/Users/sebastianpacheco/Downloads/Vibe Coding/TRIBE v2/.npm-cache-v2/_logs/2026-04-09T12_10_06_052Z-debug-0.log
+
+# npm resolution error report
+
+While resolving: tribe-v2-dashboard@0.1.0
+Found: react@19.2.5
+node_modules/react
+  react@"latest" from the root project
+  peer react@"*" from expo@55.0.12
+  node_modules/expo
+    peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+    node_modules/@react-three/fiber
+      @react-three/fiber@"^8.15.0" from the root project
+    peer expo@"*" from @expo/dom-webview@55.0.5
+    node_modules/@expo/dom-webview
+      peerOptional @expo/dom-webview@"*" from expo@55.0.12
+    peer expo@"*" from @expo/metro-runtime@55.0.9
+    node_modules/@expo/metro-runtime
+      peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+    peer expo@"*" from expo-asset@55.0.13
+    node_modules/expo-asset
+      peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      expo-asset@"~55.0.13" from expo@55.0.12
+    peer expo@"*" from expo-file-system@55.0.15
+    node_modules/expo-file-system
+      peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      expo-file-system@"~55.0.15" from expo@55.0.12
+    peer expo@"*" from expo-gl@55.0.12
+    node_modules/expo-gl
+      peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from @expo/dom-webview@55.0.5
+  node_modules/@expo/dom-webview
+    peerOptional @expo/dom-webview@"*" from expo@55.0.12
+  peer react@"^19.2.3" from react-native@0.85.0
+  node_modules/react-native
+    peerOptional react-native@">=0.64" from @react-three/fiber@8.18.0
+    node_modules/@react-three/fiber
+      @react-three/fiber@"^8.15.0" from the root project
+    peer react-native@"*" from expo@55.0.12
+    node_modules/expo
+      peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      peer expo@"*" from @expo/dom-webview@55.0.5
+      node_modules/@expo/dom-webview
+        peerOptional @expo/dom-webview@"*" from expo@55.0.12
+      peer expo@"*" from @expo/metro-runtime@55.0.9
+      node_modules/@expo/metro-runtime
+        peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+      peer expo@"*" from expo-asset@55.0.13
+      node_modules/expo-asset
+        peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-asset@"~55.0.13" from expo@55.0.12
+      peer expo@"*" from expo-file-system@55.0.15
+      node_modules/expo-file-system
+        peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-file-system@"~55.0.15" from expo@55.0.12
+      peer expo@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+    peer react-native@"*" from @expo/dom-webview@55.0.5
+    node_modules/@expo/dom-webview
+      peerOptional @expo/dom-webview@"*" from expo@55.0.12
+    peer react-native@"*" from @expo/metro-runtime@55.0.9
+    node_modules/@expo/metro-runtime
+      peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+    peer react-native@"*" from react-native-webview@13.16.1
+    node_modules/react-native-webview
+      peerOptional react-native-webview@"*" from expo@55.0.12
+      node_modules/expo
+        peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        peer expo@"*" from @expo/dom-webview@55.0.5
+        node_modules/@expo/dom-webview
+          peerOptional @expo/dom-webview@"*" from expo@55.0.12
+        peer expo@"*" from @expo/metro-runtime@55.0.9
+        node_modules/@expo/metro-runtime
+          peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+        peer expo@"*" from expo-asset@55.0.13
+        node_modules/expo-asset
+          peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+          expo-asset@"~55.0.13" from expo@55.0.12
+        peer expo@"*" from expo-file-system@55.0.15
+        node_modules/expo-file-system
+          peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+          expo-file-system@"~55.0.15" from expo@55.0.12
+        peer expo@"*" from expo-gl@55.0.12
+        node_modules/expo-gl
+          peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+    peer react-native@"*" from expo-asset@55.0.13
+    node_modules/expo-asset
+      peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      expo-asset@"~55.0.13" from expo@55.0.12
+    peer react-native@"*" from expo-file-system@55.0.15
+    node_modules/expo-file-system
+      peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      expo-file-system@"~55.0.15" from expo@55.0.12
+    peer react-native@"*" from expo-gl@55.0.12
+    node_modules/expo-gl
+      peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+    peer react-native@"0.81 - 0.85" from react-native-reanimated@4.3.0
+    node_modules/react-native-reanimated
+      peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+    peer react-native@"0.81 - 0.85" from react-native-worklets@0.8.1
+    node_modules/react-native-worklets
+      peer react-native-worklets@"0.8.x" from react-native-reanimated@4.3.0
+      node_modules/react-native-reanimated
+        peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+        node_modules/expo-gl
+          peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+  peer react@"^19.2.3" from @react-native/jest-preset@0.85.0
+  node_modules/@react-native/jest-preset
+    peerOptional @react-native/jest-preset@"0.85.0" from react-native@0.85.0
+    node_modules/react-native
+      peerOptional react-native@">=0.64" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      peer react-native@"*" from expo@55.0.12
+      node_modules/expo
+        peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        peer expo@"*" from @expo/dom-webview@55.0.5
+        node_modules/@expo/dom-webview
+          peerOptional @expo/dom-webview@"*" from expo@55.0.12
+        peer expo@"*" from @expo/metro-runtime@55.0.9
+        node_modules/@expo/metro-runtime
+          peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+        peer expo@"*" from expo-asset@55.0.13
+        node_modules/expo-asset
+          peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+          expo-asset@"~55.0.13" from expo@55.0.12
+        peer expo@"*" from expo-file-system@55.0.15
+        node_modules/expo-file-system
+          peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+          expo-file-system@"~55.0.15" from expo@55.0.12
+        peer expo@"*" from expo-gl@55.0.12
+        node_modules/expo-gl
+          peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+      peer react-native@"*" from @expo/dom-webview@55.0.5
+      node_modules/@expo/dom-webview
+        peerOptional @expo/dom-webview@"*" from expo@55.0.12
+      peer react-native@"*" from @expo/metro-runtime@55.0.9
+      node_modules/@expo/metro-runtime
+        peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+      peer react-native@"*" from react-native-webview@13.16.1
+      node_modules/react-native-webview
+        peerOptional react-native-webview@"*" from expo@55.0.12
+        node_modules/expo
+          peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+          peer expo@"*" from @expo/dom-webview@55.0.5
+          node_modules/@expo/dom-webview
+            peerOptional @expo/dom-webview@"*" from expo@55.0.12
+          peer expo@"*" from @expo/metro-runtime@55.0.9
+          node_modules/@expo/metro-runtime
+            peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+          peer expo@"*" from expo-asset@55.0.13
+          node_modules/expo-asset
+            peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+            node_modules/@react-three/fiber
+              @react-three/fiber@"^8.15.0" from the root project
+            expo-asset@"~55.0.13" from expo@55.0.12
+          peer expo@"*" from expo-file-system@55.0.15
+          node_modules/expo-file-system
+            peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+            node_modules/@react-three/fiber
+              @react-three/fiber@"^8.15.0" from the root project
+            expo-file-system@"~55.0.15" from expo@55.0.12
+          peer expo@"*" from expo-gl@55.0.12
+          node_modules/expo-gl
+            peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+            node_modules/@react-three/fiber
+              @react-three/fiber@"^8.15.0" from the root project
+      peer react-native@"*" from expo-asset@55.0.13
+      node_modules/expo-asset
+        peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-asset@"~55.0.13" from expo@55.0.12
+      peer react-native@"*" from expo-file-system@55.0.15
+      node_modules/expo-file-system
+        peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-file-system@"~55.0.15" from expo@55.0.12
+      peer react-native@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+      peer react-native@"0.81 - 0.85" from react-native-reanimated@4.3.0
+      node_modules/react-native-reanimated
+        peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+        node_modules/expo-gl
+          peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+          node_modules/@react-three/fiber
+            @react-three/fiber@"^8.15.0" from the root project
+      peer react-native@"0.81 - 0.85" from react-native-worklets@0.8.1
+      node_modules/react-native-worklets
+        peer react-native-worklets@"0.8.x" from react-native-reanimated@4.3.0
+        node_modules/react-native-reanimated
+          peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+          node_modules/expo-gl
+            peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+            node_modules/@react-three/fiber
+              @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from @expo/metro-runtime@55.0.9
+  node_modules/@expo/metro-runtime
+    peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+  peer react@"^19.2.5" from react-dom@19.2.5
+  node_modules/react-dom
+    react-dom@"latest" from the root project
+    peerOptional react-dom@"*" from @expo/metro-runtime@55.0.9
+    node_modules/@expo/metro-runtime
+      peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+    peerOptional react-dom@"*" from expo-gl@55.0.12
+    node_modules/expo-gl
+      peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+    peer react-dom@"^18.0.0 || ^19.0.0" from react-native-web@0.21.2
+    node_modules/react-native-web
+      peerOptional react-native-web@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from react-native-webview@13.16.1
+  node_modules/react-native-webview
+    peerOptional react-native-webview@"*" from expo@55.0.12
+    node_modules/expo
+      peerOptional expo@">=43.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+      peer expo@"*" from @expo/dom-webview@55.0.5
+      node_modules/@expo/dom-webview
+        peerOptional @expo/dom-webview@"*" from expo@55.0.12
+      peer expo@"*" from @expo/metro-runtime@55.0.9
+      node_modules/@expo/metro-runtime
+        peerOptional @expo/metro-runtime@"*" from expo@55.0.12
+      peer expo@"*" from expo-asset@55.0.13
+      node_modules/expo-asset
+        peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-asset@"~55.0.13" from expo@55.0.12
+      peer expo@"*" from expo-file-system@55.0.15
+      node_modules/expo-file-system
+        peerOptional expo-file-system@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+        expo-file-system@"~55.0.15" from expo@55.0.12
+      peer expo@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from expo-asset@55.0.13
+  node_modules/expo-asset
+    peerOptional expo-asset@">=8.4" from @react-three/fiber@8.18.0
+    node_modules/@react-three/fiber
+      @react-three/fiber@"^8.15.0" from the root project
+    expo-asset@"~55.0.13" from expo@55.0.12
+  peer react@"*" from expo-gl@55.0.12
+  node_modules/expo-gl
+    peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+    node_modules/@react-three/fiber
+      @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from react-native-reanimated@4.3.0
+  node_modules/react-native-reanimated
+    peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+    node_modules/expo-gl
+      peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+  peer react@"*" from react-native-worklets@0.8.1
+  node_modules/react-native-worklets
+    peer react-native-worklets@"0.8.x" from react-native-reanimated@4.3.0
+    node_modules/react-native-reanimated
+      peerOptional react-native-reanimated@"*" from expo-gl@55.0.12
+      node_modules/expo-gl
+        peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+        node_modules/@react-three/fiber
+          @react-three/fiber@"^8.15.0" from the root project
+  peer react@"^18.0.0 || ^19.0.0" from react-native-web@0.21.2
+  node_modules/react-native-web
+    peerOptional react-native-web@"*" from expo-gl@55.0.12
+    node_modules/expo-gl
+      peerOptional expo-gl@">=11.0" from @react-three/fiber@8.18.0
+      node_modules/@react-three/fiber
+        @react-three/fiber@"^8.15.0" from the root project
+
+Could not resolve dependency:
+peer react@">=18 <19" from @react-three/fiber@8.18.0
+node_modules/@react-three/fiber
+  @react-three/fiber@"^8.15.0" from the root project
+
+Fix the upstream dependency conflict, or retry
+this command with --force or --legacy-peer-deps
+to accept an incorrect (and potentially broken) dependency resolution.
