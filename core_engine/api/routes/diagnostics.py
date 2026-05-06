@@ -1,9 +1,15 @@
 import datetime
 import json
+import shutil
+import time
 import uuid
 from pathlib import Path
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException
+from PIL import Image
+
 from core_engine.api.schemas.diagnostics import (
     ActionableStep,
     AutomatedFlags,
@@ -22,6 +28,11 @@ router = APIRouter()
 engine = TribeInferenceEngine()
 insight_gen = InsightGenerator()
 TMP_ROOT = Path("tmp/diagnostics")
+TMP_MAX_AGE_HOURS = 24
+
+# ---------------------------------------------------------------------------
+# Path helpers
+# ---------------------------------------------------------------------------
 
 def _request_root(request_id: str) -> Path:
     return TMP_ROOT / request_id
@@ -42,6 +53,10 @@ def _ensure_request_dirs(request_id: str, frame_rate: int = 1) -> None:
 def _safe_filename(filename: str) -> str:
     fallback_name = "uploaded_video.bin"
     return Path(filename or fallback_name).name or fallback_name
+
+# ---------------------------------------------------------------------------
+# Upload / frame helpers
+# ---------------------------------------------------------------------------
 
 async def _persist_upload(file: UploadFile, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -71,20 +86,145 @@ def _resolve_frame_paths(request_id: str, video_path: Path, frame_rate: int) -> 
         return existing_frames
     return _extract_frames_for_request(video_path, frames_dir, frame_rate)
 
-def _build_automated_flags(stimuli, inference_result: dict) -> AutomatedFlags:
-    features = inference_result.get("feature_summary", {})
-    contrast = float(features.get("contrast", 0.0))
-    motion = float(features.get("motion_energy", 0.0))
-    brightness = float(features.get("brightness", 0.0))
+# ---------------------------------------------------------------------------
+# Real QA checks
+# ---------------------------------------------------------------------------
 
+def _scan_for_qr(frame_paths: list[str]) -> bool | None:
+    """Scan a sample of frames with pyzbar. Returns True if a QR is found, None if none detected."""
+    if not frame_paths:
+        return None
+    step = max(1, len(frame_paths) // 5)
+    sample = frame_paths[::step][:5]
+    for path in sample:
+        try:
+            from pyzbar import pyzbar as _pyzbar
+            img = Image.open(path)
+            codes = _pyzbar.decode(img)
+            if codes:
+                return True
+        except Exception:
+            continue
+    return None
+
+
+def _check_safe_zones(frame_paths: list[str]) -> bool:
+    """
+    Check that high-saliency content (bright, high-contrast regions) stays within
+    the CTV safe area: 10% horizontal margin, 5% vertical margin on each side.
+    Passes if fewer than 20% of sampled frames have significant safe-zone violations.
+    """
+    if not frame_paths:
+        return True
+    step = max(1, len(frame_paths) // 5)
+    sample = frame_paths[::step][:5]
+    violations = 0
+    for path in sample:
+        try:
+            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            h, w = img.shape
+            margin_x = int(w * 0.10)
+            margin_y = int(h * 0.05)
+            _, thresh = cv2.threshold(img, 200, 255, cv2.THRESH_BINARY)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cv2.contourArea(cnt) < 500:
+                    continue
+                x, y, cw, ch = cv2.boundingRect(cnt)
+                outside = (
+                    x < margin_x
+                    or y < margin_y
+                    or (x + cw) > (w - margin_x)
+                    or (y + ch) > (h - margin_y)
+                )
+                if outside:
+                    violations += 1
+                    break
+        except Exception:
+            continue
+    return violations <= max(1, len(sample) * 0.20)
+
+
+def _detect_cta(frame_paths: list[str], features: dict) -> bool:
+    """
+    Detect CTA presence by measuring edge density and contrast in the last 30% of frames,
+    where CTAs typically appear. Falls back to visual feature heuristic if frames are unavailable.
+    """
+    if not frame_paths:
+        return features.get("contrast", 0.0) > 0.18 or features.get("motion_energy", 0.0) > 0.04
+
+    cutoff = int(len(frame_paths) * 0.70)
+    last_segment = frame_paths[cutoff:] or frame_paths[-3:]
+    scores = []
+    for path in last_segment:
+        try:
+            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            edges = cv2.Canny(img, 50, 150)
+            edge_density = float(edges.mean()) / 255.0
+            contrast = float(img.std()) / 128.0
+            scores.append(edge_density + contrast)
+        except Exception:
+            continue
+
+    if not scores:
+        return features.get("contrast", 0.0) > 0.18 or features.get("motion_energy", 0.0) > 0.04
+
+    return float(np.mean(scores)) > 0.25
+
+
+def _detect_logo(frame_paths: list[str]) -> bool:
+    """
+    Estimate logo visibility by checking for consistent bright/high-contrast elements
+    in the four corners of the opening frames. Logo placements are typically top-left
+    or bottom-right on CTV creatives.
+    """
+    if not frame_paths:
+        return False
+
+    sample = frame_paths[:min(5, len(frame_paths))]
+    corner_scores = []
+    for path in sample:
+        try:
+            img = cv2.imread(path, cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            h, w = img.shape[:2]
+            ch, cw = max(1, int(h * 0.15)), max(1, int(w * 0.15))
+            corners = [
+                img[:ch, :cw],
+                img[:ch, w - cw:],
+                img[h - ch:, :cw],
+                img[h - ch:, w - cw:],
+            ]
+            max_brightness = max(float(c.mean()) / 255.0 for c in corners if c.size > 0)
+            corner_scores.append(max_brightness)
+        except Exception:
+            continue
+
+    if not corner_scores:
+        return False
+
+    return float(np.mean(corner_scores)) > 0.15
+
+
+def _build_automated_flags(stimuli: np.ndarray, inference_result: dict, frame_paths: list[str]) -> AutomatedFlags:
+    features = inference_result.get("feature_summary", {})
     return AutomatedFlags(
-        spelling_grammar_passed=True,
-        cta_present=contrast > 0.18 or motion > 0.04,
-        logo_visible=brightness > 0.16,
-        safe_zones_passed=True,
+        spelling_grammar_passed=True,  # Requires Tesseract OCR — not available in this environment
+        cta_present=_detect_cta(frame_paths, features),
+        logo_visible=_detect_logo(frame_paths),
+        safe_zones_passed=_check_safe_zones(frame_paths),
         resolution_passed=stimuli.shape[1] >= 224 and stimuli.shape[2] >= 224,
-        qr_code_scannable=contrast > 0.22,
+        qr_code_scannable=_scan_for_qr(frame_paths),
     )
+
+# ---------------------------------------------------------------------------
+# Hybrid review / deterministic fallback
+# ---------------------------------------------------------------------------
 
 def _build_deterministic_review(inference_result: dict) -> dict:
     features = inference_result.get("feature_summary", {})
@@ -149,10 +289,14 @@ def _build_deterministic_review(inference_result: dict) -> dict:
         },
     }
 
+# ---------------------------------------------------------------------------
+# Actionable steps
+# ---------------------------------------------------------------------------
+
 def _build_actionable_steps(
     automated_flags: AutomatedFlags,
     hybrid_flags: HybridFlags,
-    inference_result: dict,
+    _inference_result: dict,
     frame_insights: list[dict],
 ) -> list[ActionableStep]:
     steps = []
@@ -171,7 +315,7 @@ def _build_actionable_steps(
             ActionableStep(
                 priority="High",
                 title="Make the CTA unmistakable in the last third.",
-                rationale="The automated pass did not detect enough contrast or motion energy around a clear action cue.",
+                rationale="Edge detection on the final frames did not find enough contrast or activity around a clear action cue.",
                 frame_range="Final 3-5 seconds",
             )
         )
@@ -181,8 +325,18 @@ def _build_actionable_steps(
             ActionableStep(
                 priority="High",
                 title="Increase brand salience in opening and closing frames.",
-                rationale="Brand visibility is weak; viewers may remember the offer without linking it to the advertiser.",
+                rationale="Corner analysis found low brightness in typical logo positions; viewers may not link the offer to the brand.",
                 frame_range="Opening frame and end card",
+            )
+        )
+
+    if automated_flags.safe_zones_passed is False:
+        steps.append(
+            ActionableStep(
+                priority="High",
+                title="Move key elements inside the CTV safe area.",
+                rationale="High-saliency content was detected outside the 10%/5% CTV safe-zone margins and may be cropped on some screens.",
+                frame_range="Full creative",
             )
         )
 
@@ -253,6 +407,31 @@ def _build_actionable_steps(
 
     return steps[:5]
 
+# ---------------------------------------------------------------------------
+# tmp/diagnostics cleanup
+# ---------------------------------------------------------------------------
+
+def _cleanup_old_requests(max_age_hours: int = TMP_MAX_AGE_HOURS) -> int:
+    """Delete request directories older than max_age_hours. Returns count of deleted directories."""
+    if not TMP_ROOT.exists():
+        return 0
+    cutoff = time.time() - (max_age_hours * 3600)
+    deleted = 0
+    for request_dir in TMP_ROOT.iterdir():
+        if not request_dir.is_dir():
+            continue
+        try:
+            if request_dir.stat().st_mtime < cutoff:
+                shutil.rmtree(request_dir)
+                deleted += 1
+        except Exception:
+            pass
+    return deleted
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @router.post("/analyze", response_model=DiagnosticResult)
 async def analyze_creative(request: VideoInferenceRequest):
     if not request.request_id and not request.video_url:
@@ -280,7 +459,7 @@ async def analyze_creative(request: VideoInferenceRequest):
     stimuli = processor.get_frame_grid_analysis(frame_paths)
     inference_result = engine.predict(stimuli)
     frame_insights_data = engine.predict_frame_sequence(stimuli, frame_rate)
-    
+
     try:
         gemini_explanation_str = await insight_gen.generate_explanation(inference_result)
         gemini_data = json.loads(gemini_explanation_str)
@@ -289,14 +468,14 @@ async def analyze_creative(request: VideoInferenceRequest):
 
     if "hybrid_flags" not in gemini_data or "final_decision" not in gemini_data:
         gemini_data = _build_deterministic_review(inference_result)
-        
+
     hybrid_dict = gemini_data.get("hybrid_flags", {})
     decision_dict = gemini_data.get("final_decision", {})
-    automated_flags = _build_automated_flags(stimuli, inference_result)
+    automated_flags = _build_automated_flags(stimuli, inference_result, frame_paths)
     hybrid_flags = HybridFlags(
         pacing_warnings=hybrid_dict.get("pacing_warnings", []),
         transition_warnings=hybrid_dict.get("transition_warnings", []),
-        brand_voice_score=hybrid_dict.get("brand_voice_score", 0.0)
+        brand_voice_score=hybrid_dict.get("brand_voice_score", 0.0),
     )
     frame_insights = [FrameInsight(**frame_insight) for frame_insight in frame_insights_data]
     actionable_steps = _build_actionable_steps(
@@ -315,7 +494,7 @@ async def analyze_creative(request: VideoInferenceRequest):
         "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     _request_metadata_path(request_id).write_text(json.dumps(metadata, indent=2))
-        
+
     return DiagnosticResult(
         request_id=request_id,
         timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -332,9 +511,10 @@ async def analyze_creative(request: VideoInferenceRequest):
         final_decision=FinalDecision(
             strategy_category=decision_dict.get("strategy_category", "Unknown"),
             approved=decision_dict.get("approved", False),
-            revisions_required=decision_dict.get("revisions_required", True)
-        )
+            revisions_required=decision_dict.get("revisions_required", True),
+        ),
     )
+
 
 @router.post("/upload", response_model=UploadVideoResponse)
 async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
@@ -352,6 +532,7 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = Fil
     }
     _request_metadata_path(request_id).write_text(json.dumps(upload_metadata, indent=2))
     background_tasks.add_task(_extract_frames_for_request, destination, _request_frames_dir(request_id, 1), 1)
+    background_tasks.add_task(_cleanup_old_requests, TMP_MAX_AGE_HOURS)
 
     return UploadVideoResponse(
         request_id=request_id,
@@ -359,3 +540,10 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = Fil
         status="uploaded",
         message="Video uploaded successfully and frame extraction started.",
     )
+
+
+@router.delete("/cleanup")
+async def cleanup_diagnostics(max_age_hours: int = TMP_MAX_AGE_HOURS):
+    """Delete tmp/diagnostics directories older than max_age_hours (default 24h)."""
+    deleted = _cleanup_old_requests(max_age_hours)
+    return {"deleted_requests": deleted, "max_age_hours": max_age_hours}
