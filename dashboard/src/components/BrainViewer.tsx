@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useMemo, useEffect } from 'react'
+import { Component, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stars, Float, MeshDistortMaterial, Points, PointMaterial } from '@react-three/drei'
 import * as THREE from 'three'
@@ -8,6 +8,57 @@ import * as THREE from 'three'
 interface BrainProps {
   activationLevel?: number; // 0 to 1
   activeRegion?: 'frontal' | 'temporal' | 'visual' | 'all';
+}
+
+class BrainErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback
+    }
+
+    return this.props.children
+  }
+}
+
+function hasWebGLSupport() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    const canvas = document.createElement('canvas')
+    return Boolean(
+      window.WebGLRenderingContext &&
+      (canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
+    )
+  } catch {
+    return false
+  }
+}
+
+function BrainFallback({ activationLevel = 0.5 }: BrainProps) {
+  const pulse = Math.max(0.2, Math.min(1, activationLevel))
+
+  return (
+    <div id="brain-canvas-container" className="overflow-hidden bg-[#050505]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(232,93,100,0.20),transparent_34%),linear-gradient(180deg,#050505_0%,#000_100%)]" />
+      <div className="absolute left-1/2 top-1/2 h-[42vmin] w-[42vmin] -translate-x-1/2 -translate-y-1/2 rounded-full border border-seedtag-coral/20 bg-seedtag-coral/5 shadow-[0_0_90px_rgba(232,93,100,0.18)]" />
+      <div
+        className="absolute left-1/2 top-1/2 h-[28vmin] w-[28vmin] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10"
+        style={{ opacity: 0.2 + pulse * 0.5 }}
+      />
+      <div
+        className="absolute left-1/2 top-1/2 h-[12vmin] w-[12vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-seedtag-coral/20 blur-xl"
+        style={{ opacity: 0.25 + pulse * 0.35 }}
+      />
+    </div>
+  )
 }
 
 function BrainPoints({ activationLevel = 0.5, activeRegion = 'all' }: BrainProps) {
@@ -101,25 +152,40 @@ function CentralCore({ activationLevel = 0.5 }: { activationLevel?: number }) {
 }
 
 export default function BrainViewer({ activationLevel, activeRegion }: BrainProps) {
+  const [isMounted, setIsMounted] = useState(false)
+  const [webglAvailable, setWebglAvailable] = useState(false)
+  const fallback = <BrainFallback activationLevel={activationLevel} activeRegion={activeRegion} />
+
+  useEffect(() => {
+    setWebglAvailable(hasWebGLSupport())
+    setIsMounted(true)
+  }, [])
+
+  if (!isMounted || !webglAvailable) {
+    return fallback
+  }
+
   return (
-    <div id="brain-canvas-container">
-      <Canvas camera={{ position: [0, 0, 10], fov: 40 }}>
-        <color attach="background" args={['#050505']} />
-        <ambientLight intensity={0.2} />
-        <pointLight position={[10, 10, 10]} intensity={1.5} color="#E85D64" />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} color="#444" />
-        
-        <BrainPoints activationLevel={activationLevel} activeRegion={activeRegion} />
-        <CentralCore activationLevel={activationLevel} />
-        <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={0.5} />
-        
-        <OrbitControls 
-          enableZoom={false} 
-          enablePan={false} 
-          autoRotate 
-          autoRotateSpeed={0.3} 
-        />
-      </Canvas>
-    </div>
+    <BrainErrorBoundary fallback={fallback}>
+      <div id="brain-canvas-container">
+        <Canvas camera={{ position: [0, 0, 10], fov: 40 }}>
+          <color attach="background" args={['#050505']} />
+          <ambientLight intensity={0.2} />
+          <pointLight position={[10, 10, 10]} intensity={1.5} color="#E85D64" />
+          <pointLight position={[-10, -10, -10]} intensity={0.5} color="#444" />
+          
+          <BrainPoints activationLevel={activationLevel} activeRegion={activeRegion} />
+          <CentralCore activationLevel={activationLevel} />
+          <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={0.5} />
+          
+          <OrbitControls 
+            enableZoom={false} 
+            enablePan={false} 
+            autoRotate 
+            autoRotateSpeed={0.3} 
+          />
+        </Canvas>
+      </div>
+    </BrainErrorBoundary>
   )
 }

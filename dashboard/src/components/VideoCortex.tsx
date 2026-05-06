@@ -1,93 +1,343 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Play, Pause, SkipForward, SkipBack, Maximize, Volume2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Play, Pause, Upload, Loader2, Maximize, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface VideoCortexProps {
   onTimeUpdate?: (progress: number) => void;
+  videoUrl?: string | null;
+  selectedFileName?: string | null;
+  requestId?: string | null;
+  isUploading?: boolean;
+  isAnalyzing?: boolean;
+  uploadProgress?: number;
+  analysisProgress?: number;
+  onSelectFile: (file: File) => void;
+  onUpload: () => void;
+  onAnalyze: () => void;
+  canAnalyze: boolean;
 }
 
-export default function VideoCortex({ onTimeUpdate }: VideoCortexProps) {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '00:00'
+  }
 
-  useEffect(() => {
-    if (isPlaying) {
-      timerRef.current = setInterval(() => {
-        setProgress(prev => {
-          const next = prev + 0.5
-          if (next >= 100) {
-            setIsPlaying(false)
-            return 100
-          }
-          if (onTimeUpdate) onTimeUpdate(next)
-          return next
-        })
-      }, 100)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [isPlaying, onTimeUpdate])
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+}
 
-  const togglePlay = () => setIsPlaying(!isPlaying)
+function ProgressMeter({
+  label,
+  value,
+  active,
+}: {
+  label: string
+  value: number
+  active: boolean
+}) {
+  const boundedValue = Math.max(0, Math.min(100, Math.round(value)))
+  const isComplete = boundedValue >= 100
 
   return (
-    <div className="glass-card overflow-hidden group relative aspect-video w-full max-w-2xl border-white/5 bg-black">
-      {/* Mock Video Content */}
+    <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <span className="truncate text-[10px] font-bold uppercase tracking-widest text-gray-300">
+          {label}
+        </span>
+        <span className={`shrink-0 text-[10px] font-bold uppercase tracking-widest ${
+          active ? 'text-seedtag-coral' : isComplete ? 'text-emerald-300' : 'text-gray-400'
+        }`}>
+          {isComplete ? 'Done' : `${boundedValue}%`}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${
+            isComplete ? 'bg-emerald-400' : 'bg-seedtag-coral'
+          }`}
+          style={{ width: `${boundedValue}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+export default function VideoCortex({
+  onTimeUpdate,
+  videoUrl,
+  selectedFileName,
+  requestId,
+  isUploading = false,
+  isAnalyzing = false,
+  uploadProgress = 0,
+  analysisProgress = 0,
+  onSelectFile,
+  onUpload,
+  onAnalyze,
+  canAnalyze,
+}: VideoCortexProps) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const showUploadProgress = Boolean(selectedFileName && (isUploading || uploadProgress > 0))
+  const showAnalysisProgress = Boolean(isAnalyzing || analysisProgress > 0)
+
+  useEffect(() => {
+    setIsPlaying(false)
+    setProgress(0)
+    setDuration(0)
+
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }, [videoUrl])
+
+  const togglePlay = async () => {
+    if (!videoRef.current || !videoUrl) {
+      return
+    }
+
+    if (videoRef.current.paused) {
+      await videoRef.current.play()
+      setIsPlaying(true)
+      return
+    }
+
+    videoRef.current.pause()
+    setIsPlaying(false)
+  }
+
+  const handleLoadedMetadata = () => {
+    const nextDuration = videoRef.current?.duration ?? 0
+    setDuration(nextDuration)
+  }
+
+  const handleTimeUpdate = () => {
+    if (!videoRef.current) {
+      return
+    }
+
+    const nextDuration = videoRef.current.duration || 0
+    const nextProgress = nextDuration > 0
+      ? (videoRef.current.currentTime / nextDuration) * 100
+      : 0
+
+    setProgress(nextProgress)
+    onTimeUpdate?.(nextProgress)
+  }
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    onSelectFile(file)
+  }
+
+  const toggleMute = () => {
+    if (!videoRef.current) {
+      setIsMuted((current) => !current)
+      return
+    }
+
+    const nextMuted = !videoRef.current.muted
+    videoRef.current.muted = nextMuted
+    setIsMuted(nextMuted)
+  }
+
+  const enterFullscreen = async () => {
+    await containerRef.current?.requestFullscreen?.()
+  }
+
+  const seekVideo = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || !duration) {
+      return
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const nextProgress = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+    videoRef.current.currentTime = nextProgress * duration
+    setProgress(nextProgress * 100)
+    onTimeUpdate?.(nextProgress * 100)
+  }
+
+  return (
+    <div ref={containerRef} className="glass-card overflow-hidden group relative aspect-video w-full max-w-2xl border-white/5 bg-black">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black overflow-hidden">
-         <motion.div 
-           animate={{ 
-             scale: isPlaying ? [1, 1.05, 1] : 1,
-             opacity: isPlaying ? [0.3, 0.5, 0.3] : 0.2
-           }}
-           transition={{ duration: 2, repeat: Infinity }}
-           className="w-full h-full bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80')] bg-cover bg-center"
-         />
-         {!isPlaying && (
-           <motion.button 
-             whileHover={{ scale: 1.1 }}
-             onClick={togglePlay}
-             className="z-10 w-16 h-16 rounded-full bg-seedtag-coral flex items-center justify-center text-white shadow-2xl shadow-seedtag-coral/40"
-           >
-             <Play size={28} fill="currentColor" />
-           </motion.button>
-         )}
-         
-         <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/40 backdrop-blur-md rounded border border-white/10">
-            <span className="text-[10px] font-bold text-white tracking-widest uppercase">Target Stimulus: Nissan_Qashqai_CTV.mp4</span>
-         </div>
+        {videoUrl ? (
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            muted={isMuted}
+            className="h-full w-full object-cover"
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            preload="metadata"
+          />
+        ) : (
+          <motion.div
+            className="relative flex h-full w-full items-center justify-center overflow-hidden bg-black"
+          >
+            <motion.div
+              aria-hidden="true"
+              animate={{
+                scale: [1, 1.04, 1],
+                opacity: [0.32, 0.55, 0.32],
+              }}
+              transition={{ duration: 3, repeat: Infinity }}
+              className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(232,93,100,0.45),_transparent_45%),linear-gradient(135deg,_#111_0%,_#050505_100%)]"
+            />
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="z-10 flex items-center gap-3 rounded-full bg-seedtag-coral px-6 py-3 text-sm font-bold text-white shadow-2xl shadow-seedtag-coral/40"
+            >
+              <Upload size={18} />
+              Select Creative
+            </button>
+          </motion.div>
+        )}
+
+        {!isPlaying && videoUrl && (
+          <motion.button
+            whileHover={{ scale: 1.08 }}
+            onClick={togglePlay}
+            className="absolute z-10 flex h-16 w-16 items-center justify-center rounded-full bg-seedtag-coral text-white shadow-2xl shadow-seedtag-coral/40"
+          >
+            <Play size={28} fill="currentColor" />
+          </motion.button>
+        )}
+
+        <div className="absolute left-4 top-4 z-10 rounded border border-white/10 bg-black/40 px-3 py-1 backdrop-blur-md">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white">
+            Target Stimulus: {selectedFileName ?? 'Awaiting Upload'}
+          </span>
+        </div>
+
+        {requestId && (
+          <div className="absolute right-4 top-4 z-10 rounded border border-white/10 bg-black/40 px-3 py-1 backdrop-blur-md">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-white">
+              Request ID: {requestId.slice(0, 8)}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Controls Overlay */}
-      <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent translate-y-2 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all duration-300">
-        <div className="space-y-3">
-          {/* Progress Bar */}
-          <div className="h-1 w-full bg-white/20 rounded-full cursor-pointer relative">
-            <div 
-              className="absolute h-full bg-seedtag-coral rounded-full transition-all duration-100" 
+      <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-black/85 to-transparent p-4 opacity-100 transition-all duration-300 group-hover:translate-y-0">
+          <div className="space-y-3">
+          <div
+            className="relative h-1 w-full cursor-pointer rounded-full bg-white/20"
+            onClick={seekVideo}
+            role="slider"
+            aria-label="Video progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress)}
+          >
+            <div
+              className="absolute h-full bg-seedtag-coral rounded-full transition-all duration-100"
               style={{ width: `${progress}%` }}
             />
           </div>
-          
+
           <div className="flex items-center justify-between text-white">
             <div className="flex items-center gap-4">
-              <button onClick={togglePlay} className="hover:text-seedtag-coral transition-colors">
+              <button
+                onClick={togglePlay}
+                className="hover:text-seedtag-coral transition-colors disabled:opacity-40"
+                disabled={!videoUrl}
+              >
                 {isPlaying ? <Pause size={20} /> : <Play size={20} />}
               </button>
-              <SkipBack size={18} className="opacity-50" />
-              <SkipForward size={18} className="opacity-50" />
               <span className="text-xs font-mono ml-2">
-                00:{Math.floor(progress/10).toString().padStart(2, '0')} / 00:10
+                {formatTime(((progress / 100) * duration) || 0)} / {formatTime(duration)}
               </span>
             </div>
-            
+
             <div className="flex items-center gap-4">
-              <Volume2 size={18} />
-              <Maximize size={18} />
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="transition-colors hover:text-seedtag-coral"
+                aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+                title={isMuted ? 'Unmute video' : 'Mute video'}
+              >
+                {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+              <button
+                type="button"
+                onClick={enterFullscreen}
+                className="transition-colors hover:text-seedtag-coral"
+                aria-label="Enter fullscreen"
+                title="Enter fullscreen"
+              >
+                <Maximize size={18} />
+              </button>
             </div>
+          </div>
+
+          {(showUploadProgress || showAnalysisProgress) && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {showUploadProgress && (
+                <ProgressMeter
+                  label="Video upload"
+                  value={uploadProgress}
+                  active={isUploading}
+                />
+              )}
+              {showAnalysisProgress && (
+                <ProgressMeter
+                  label="Creative analysis"
+                  value={analysisProgress}
+                  active={isAnalyzing}
+                />
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isUploading || isAnalyzing}
+            >
+              Choose Video
+            </button>
+            <button
+              onClick={onUpload}
+              disabled={!selectedFileName || isUploading || isAnalyzing}
+              className="flex items-center gap-2 rounded-lg border border-seedtag-coral/30 bg-seedtag-coral/15 px-4 py-2 text-xs font-bold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {isUploading ? 'Uploading...' : 'Upload to Engine'}
+            </button>
+            <button
+              onClick={onAnalyze}
+              disabled={!canAnalyze || isUploading || isAnalyzing}
+              className="flex items-center gap-2 rounded-lg bg-seedtag-coral px-4 py-2 text-xs font-bold text-white shadow-lg shadow-seedtag-coral/20 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isUploading || isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
+              {isUploading ? 'Uploading...' : isAnalyzing ? 'Analyzing...' : 'Run Diagnostic'}
+            </button>
           </div>
         </div>
       </div>

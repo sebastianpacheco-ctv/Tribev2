@@ -1,13 +1,13 @@
 import cv2
 import os
-from typing import List, Tuple
+from typing import List
 import numpy as np
 
 class VideoProcessor:
     def __init__(self, output_dir: str = "tmp/frames"):
         self.output_dir = output_dir
         if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+            os.makedirs(self.output_dir, exist_ok=True)
 
     def extract_frames(self, video_path: str, fps: int = 1) -> List[str]:
         """
@@ -18,17 +18,23 @@ class VideoProcessor:
             raise FileNotFoundError(f"Video file not found: {video_path}")
 
         cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f"Unable to open video file: {video_path}")
+
         video_fps = cap.get(cv2.CAP_PROP_FPS)
-        hop = round(video_fps / fps)
+        sample_rate = max(1, fps)
+        hop = max(1, round(video_fps / sample_rate)) if video_fps and video_fps > 0 else 1
         
         frame_paths = []
         count = 0
-        success = True
         
-        while success:
+        while True:
             success, image = cap.read()
-            if success and count % hop == 0:
-                frame_name = f"frame_{count}.jpg"
+            if not success:
+                break
+
+            if count % hop == 0:
+                frame_name = f"frame_{count:06d}.jpg"
                 path = os.path.join(self.output_dir, frame_name)
                 cv2.imwrite(path, image)
                 frame_paths.append(path)
@@ -39,8 +45,20 @@ class VideoProcessor:
 
     def get_frame_grid_analysis(self, frame_paths: List[str]) -> np.ndarray:
         """
-        Placeholder for converting frames into a visual stimuli grid for TRIBE v2.
+        Converts extracted frames into a normalized RGB tensor ready for inference.
         """
-        # In a real TRIBE implementation, we would stack these frames
-        # and normalize them for the neural network input.
-        return np.zeros((len(frame_paths), 224, 224, 3))
+        processed_frames = []
+
+        for frame_path in sorted(frame_paths):
+            frame = cv2.imread(frame_path)
+            if frame is None:
+                continue
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(frame, (224, 224), interpolation=cv2.INTER_AREA)
+            processed_frames.append(frame.astype(np.float32) / 255.0)
+
+        if not processed_frames:
+            raise ValueError("No readable frames were available for analysis.")
+
+        return np.stack(processed_frames, axis=0)

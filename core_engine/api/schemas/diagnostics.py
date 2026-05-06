@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 
 class AutomatedFlags(BaseModel):
@@ -10,14 +10,30 @@ class AutomatedFlags(BaseModel):
     qr_code_scannable: Optional[bool] = None
 
 class HybridFlags(BaseModel):
-    pacing_warnings: List[str] = []
-    transition_warnings: List[str] = []
+    pacing_warnings: List[str] = Field(default_factory=list)
+    transition_warnings: List[str] = Field(default_factory=list)
     brand_voice_score: float = 0.0
 
 class FinalDecision(BaseModel):
     strategy_category: str = "Uncategorized"  # Eye-Catching, Storytelling, Clever Concept
     approved: bool = False
     revisions_required: bool = True
+
+class ActionableStep(BaseModel):
+    priority: str
+    title: str
+    rationale: str
+    frame_range: str
+
+class FrameInsight(BaseModel):
+    frame_index: int
+    timestamp_seconds: float
+    dominant_region: str
+    attention_score: float
+    emotional_response: float
+    sensory_load: float
+    cognitive_response: str
+    recommendation: str
 
 class DiagnosticResult(BaseModel):
     request_id: str
@@ -32,11 +48,24 @@ class DiagnosticResult(BaseModel):
     # 3. Datos puros del Tensor/Cerebro preservados para el UI (Resonancia, Atención 0-100)
     attention_score: float
     neural_resonance: float
+    region_activations: Dict[str, float] = Field(default_factory=dict)
+    prediction_confidence: float = 0.0
+    sensory_load: float = 0.0
+    frames_analyzed: int = 0
+    frame_insights: List[FrameInsight] = Field(default_factory=list)
+    actionable_steps: List[ActionableStep] = Field(default_factory=list)
     
     # 4. Puerta Final
     final_decision: FinalDecision
 
 class VideoInferenceRequest(BaseModel):
+    request_id: Optional[str] = None
     video_url: Optional[str] = None
     frame_rate: int = 1
     analysis_depth: str = "standard"
+
+class UploadVideoResponse(BaseModel):
+    request_id: str
+    filename: str
+    status: str = "uploaded"
+    message: str = "Video saved and queued for frame extraction."

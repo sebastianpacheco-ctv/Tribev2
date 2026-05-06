@@ -1,15 +1,22 @@
 import google.generativeai as genai
 import os
-import json
 from typing import Dict, Any
+from dotenv import load_dotenv
 
 class InsightGenerator:
     def __init__(self, api_key: str = None):
+        load_dotenv()
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            # Enforcing JSON output determinism
-            self.model = genai.GenerativeModel('gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
+            self.model = genai.GenerativeModel(
+                "gemini-1.5-flash",
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0,
+                    "top_p": 0.1,
+                },
+            )
         else:
             self.model = None
 
@@ -28,8 +35,9 @@ class InsightGenerator:
         Neural/Simulated Data input:
         {neural_data}
         
-        Given the above activation, output the EXACT JSON schema below describing your professional QA verdict. 
-        DO NOT include markdown formatting or json backticks. Simply output the raw JSON object.
+        Given the above activation, output the EXACT JSON schema below describing your professional QA verdict.
+        Return valid JSON only.
+        DO NOT include markdown formatting, json backticks, or prose outside the JSON object.
         
         Required JSON Schema:
         {{
@@ -48,6 +56,6 @@ class InsightGenerator:
         
         try:
             response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
+            return response.text or '{"error": "Empty response from Gemini."}'
+        except Exception:
             return '{{"error": "Error generating JSON."}}'

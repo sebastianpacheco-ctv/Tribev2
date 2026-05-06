@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 from core_engine.api.routes import diagnostics
+
+load_dotenv()
 
 app = FastAPI(
     title="TRIBE v2 Core Engine",
