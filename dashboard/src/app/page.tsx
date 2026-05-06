@@ -845,11 +845,11 @@ export default function DashboardPage() {
   const frameMarkers = useMemo((): FrameMarker[] => {
     if (!diagnosticResult) return []
     return diagnosticResult.frame_insights
-      .filter((f) => f.attention_score < 52 || f.sensory_load >= 0.62)
+      .filter((f) => f.attention_score < 75 || f.sensory_load >= 0.45)
       .map((f) => ({
         frameIndex: f.frame_index,
         timestampSeconds: f.timestamp_seconds,
-        type: (f.attention_score < 52 ? 'low-attention' : 'high-load') as 'low-attention' | 'high-load',
+        type: (f.attention_score < 75 ? 'low-attention' : 'high-load') as 'low-attention' | 'high-load',
         attentionScore: f.attention_score,
         sensoryLoad: f.sensory_load,
         recommendation: f.recommendation,
@@ -1182,24 +1182,44 @@ export default function DashboardPage() {
           </nav>
 
           <div className="mt-auto">
-            <div className="glass-card p-4 bg-seedtag-coral/10 border-seedtag-coral/20">
-              <div className="flex justify-between items-start mb-2">
-                <p className="text-xs text-seedtag-coral font-bold uppercase tracking-wider">Pro Engine</p>
-                <TrendingUp size={14} className="text-seedtag-coral" />
+            <div className="glass-card p-4 bg-white/[0.03] border-white/10 space-y-3">
+              <div className="flex justify-between items-center">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Engine Status</p>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-1.5 w-1.5 rounded-full ${diagnosticResult ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                  <span className="text-[10px] font-bold text-gray-400">
+                    {diagnosticResult ? 'Ready' : 'Idle'}
+                  </span>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed mb-4">
-                Deploy multi-voxel analysis and deep creative heatmaps.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSection('config')
-                  setInfoMessage('Pro Engine settings are available in System Config.')
-                }}
-                className="w-full text-xs font-bold py-2.5 bg-seedtag-coral rounded-lg text-white hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-seedtag-coral/20"
-              >
-                UPGRADE ENGINE
-              </button>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-gray-500">Frames analyzed</span>
+                  <span className="text-[10px] font-bold text-white font-mono">
+                    {diagnosticResult?.frames_analyzed ?? '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-gray-500">Confidence</span>
+                  <span className="text-[10px] font-bold text-white font-mono">
+                    {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-gray-500">Dominant region</span>
+                  <span className="text-[10px] font-bold text-seedtag-coral font-mono truncate max-w-[100px] text-right">
+                    {diagnosticResult ? getRegionLabel(getPrimaryRegion(diagnosticResult.region_activations)) : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-gray-500">Decision</span>
+                  <span className={`text-[10px] font-bold font-mono ${
+                    diagnosticResult?.final_decision.approved ? 'text-emerald-400' : diagnosticResult ? 'text-amber-400' : 'text-gray-600'
+                  }`}>
+                    {diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions') : '—'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </motion.aside>
