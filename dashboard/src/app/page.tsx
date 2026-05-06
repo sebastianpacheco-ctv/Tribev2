@@ -1,15 +1,15 @@
 'use client'
 
 import { ReactNode, useEffect, useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
-import { 
-  Activity, 
-  Brain, 
-  BarChart3, 
-  Settings, 
-  Download, 
-  Zap, 
-  Eye, 
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Activity,
+  Brain,
+  BarChart3,
+  Settings,
+  Download,
+  Zap,
+  Eye,
   Layers,
   TrendingUp,
   Target,
@@ -19,11 +19,15 @@ import {
   Check,
   X,
   CircleDashed,
-  Info
+  Info,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  StickyNote,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import BrainViewer from '@/components/BrainViewer'
-import VideoCortex from '@/components/VideoCortex'
+import VideoCortex, { type TimelineMarker } from '@/components/VideoCortex'
 
 const DIAGNOSTICS_API_BASE =
   process.env.NEXT_PUBLIC_TRIBE_API_BASE_URL ?? 'http://localhost:8000/api/v1/diagnostics'
@@ -90,6 +94,17 @@ interface FrameInsight {
 type HybridReviewKey = 'brandVoice' | 'pacing' | 'transitions'
 type ReviewDecision = 'confirmed' | 'rejected'
 type AnalysisDepth = 'quick' | 'standard' | 'deep'
+type MarkerDecision = 'ok' | 'flagged'
+
+interface FrameMarker {
+  frameIndex: number
+  timestampSeconds: number
+  type: 'low-attention' | 'high-load'
+  attentionScore: number
+  sensoryLoad: number
+  recommendation: string
+  cognitiveResponse: string
+}
 
 const RESULT_EXPLAINERS = {
   attention:
@@ -777,6 +792,11 @@ export default function DashboardPage() {
   const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>('standard')
   const [frameRate, setFrameRate] = useState(2)
   const [reviewDecisions, setReviewDecisions] = useState<Partial<Record<HybridReviewKey, ReviewDecision>>>({})
+  const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | null>(null)
+  const [markerDecisions, setMarkerDecisions] = useState<Record<number, MarkerDecision>>({})
+  const [markerNotes, setMarkerNotes] = useState<Record<number, string>>({})
+  const [videoSeekTarget, setVideoSeekTarget] = useState<number | null>(null)
+  const [gateExpanded, setGateExpanded] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -821,6 +841,27 @@ export default function DashboardPage() {
 
   const automatedChecks = useMemo(() => buildAutomatedChecks(diagnosticResult), [diagnosticResult])
   const hybridReviewItems = useMemo(() => buildHybridReviewItems(diagnosticResult), [diagnosticResult])
+
+  const frameMarkers = useMemo((): FrameMarker[] => {
+    if (!diagnosticResult) return []
+    return diagnosticResult.frame_insights
+      .filter((f) => f.attention_score < 52 || f.sensory_load >= 0.62)
+      .map((f) => ({
+        frameIndex: f.frame_index,
+        timestampSeconds: f.timestamp_seconds,
+        type: (f.attention_score < 52 ? 'low-attention' : 'high-load') as 'low-attention' | 'high-load',
+        attentionScore: f.attention_score,
+        sensoryLoad: f.sensory_load,
+        recommendation: f.recommendation,
+        cognitiveResponse: f.cognitive_response,
+      }))
+  }, [diagnosticResult])
+
+  const timelineMarkers = useMemo((): TimelineMarker[] =>
+    frameMarkers.map((m) => ({ frameIndex: m.frameIndex, timestampSeconds: m.timestampSeconds, type: m.type })),
+    [frameMarkers]
+  )
+
   const reviewSummary = useMemo(() => {
     const decisions = Object.values(reviewDecisions)
 
@@ -995,6 +1036,32 @@ export default function DashboardPage() {
     setInfoMessage(`${decision === 'confirmed' ? 'Confirmed' : 'Rejected'} ${id.replace(/([A-Z])/g, ' $1').toLowerCase()} review.`)
   }
 
+  const handleMarkerClick = (frameIndex: number, timestampSeconds: number) => {
+    setActiveMarkerIndex(frameIndex)
+    setVideoSeekTarget(timestampSeconds)
+  }
+
+  const navigateMarker = (direction: 'prev' | 'next') => {
+    if (!frameMarkers.length) return
+    if (activeMarkerIndex === null) {
+      const first = frameMarkers[0]
+      setActiveMarkerIndex(first.frameIndex)
+      setVideoSeekTarget(first.timestampSeconds)
+      return
+    }
+    const currentIdx = frameMarkers.findIndex((m) => m.frameIndex === activeMarkerIndex)
+    const nextIdx = direction === 'next'
+      ? Math.min(frameMarkers.length - 1, currentIdx + 1)
+      : Math.max(0, currentIdx - 1)
+    const next = frameMarkers[nextIdx]
+    setActiveMarkerIndex(next.frameIndex)
+    setVideoSeekTarget(next.timestampSeconds)
+  }
+
+  const setMarkerDecision = (frameIndex: number, decision: MarkerDecision) => {
+    setMarkerDecisions((current) => ({ ...current, [frameIndex]: decision }))
+  }
+
   const openSection = (section: DashboardSection) => {
     setActiveSection(section)
     setErrorMessage(null)
@@ -1031,6 +1098,11 @@ export default function DashboardPage() {
     setErrorMessage(null)
     setInfoMessage('Session cleared. Select a new creative to start again.')
     setReviewDecisions({})
+    setActiveMarkerIndex(null)
+    setMarkerDecisions({})
+    setMarkerNotes({})
+    setVideoSeekTarget(null)
+    setGateExpanded(false)
     setActivation(0.4)
     setRegion('all')
     setVoxelMode(false)
@@ -1190,6 +1262,10 @@ export default function DashboardPage() {
                 onUpload={uploadVideo}
                 onAnalyze={analyzeCreative}
                 canAnalyze={Boolean(uploadResult?.request_id || selectedFile)}
+                markers={timelineMarkers}
+                activeMarkerIndex={activeMarkerIndex}
+                onMarkerClick={handleMarkerClick}
+                seekTarget={videoSeekTarget}
               />
             </motion.div>
           </div>
@@ -1439,17 +1515,111 @@ export default function DashboardPage() {
             </section>
 
             <section className="space-y-3">
-              <SectionHeading
-                title="Hybrid Review"
-                info={RESULT_EXPLAINERS.hybrid}
-                badge={
-                  <span className="rounded border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-200">
-                    Human Gate
-                  </span>
-                }
-              />
+              <div className="flex items-center justify-between">
+                <SectionHeading
+                  title="Hybrid Review"
+                  info={RESULT_EXPLAINERS.hybrid}
+                  badge={
+                    <span className="rounded border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-200">
+                      Human Gate
+                    </span>
+                  }
+                />
+                {diagnosticResult && frameMarkers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setGateExpanded(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-200 transition-all hover:bg-amber-400/20"
+                  >
+                    <Maximize2 size={11} />
+                    Review
+                  </button>
+                )}
+              </div>
 
-              <div className="space-y-3">
+              {/* Frame marker summary */}
+              {diagnosticResult && frameMarkers.length > 0 && (
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                      Frame Markers
+                    </span>
+                    <span className="text-[10px] font-bold text-amber-300">
+                      {Object.keys(markerDecisions).length}/{frameMarkers.length} reviewed
+                    </span>
+                  </div>
+                  <div className="flex gap-3 text-[10px] text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full bg-red-500/80" />
+                      {frameMarkers.filter((m) => m.type === 'low-attention').length} low attention
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500/80" />
+                      {frameMarkers.filter((m) => m.type === 'high-load').length} high load
+                    </span>
+                  </div>
+                  {activeMarkerIndex !== null && (() => {
+                    const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
+                    if (!m) return null
+                    const decision = markerDecisions[m.frameIndex]
+                    return (
+                      <div className="rounded border border-white/10 bg-black/30 p-2 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] font-bold ${m.type === 'low-attention' ? 'text-red-300' : 'text-amber-300'}`}>
+                            {m.type === 'low-attention' ? '⚠ Low Attention' : '⚠ High Load'} · {m.timestampSeconds}s
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setMarkerDecision(m.frameIndex, 'ok')}
+                              className={`flex h-6 w-6 items-center justify-center rounded border text-[10px] transition-all ${
+                                decision === 'ok'
+                                  ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
+                                  : 'border-white/10 bg-white/5 text-gray-400 hover:text-emerald-300'
+                              }`}
+                            >
+                              <Check size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMarkerDecision(m.frameIndex, 'flagged')}
+                              className={`flex h-6 w-6 items-center justify-center rounded border text-[10px] transition-all ${
+                                decision === 'flagged'
+                                  ? 'border-red-400/40 bg-red-400/20 text-red-100'
+                                  : 'border-white/10 bg-white/5 text-gray-400 hover:text-red-300'
+                              }`}
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] leading-snug text-gray-400">{m.recommendation}</p>
+                      </div>
+                    )
+                  })()}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => navigateMarker('prev')}
+                      className="flex h-7 flex-1 items-center justify-center gap-1 rounded border border-white/10 bg-white/5 text-[10px] font-bold text-gray-300 transition-all hover:bg-white/10 disabled:opacity-40"
+                      disabled={!frameMarkers.length}
+                    >
+                      <ChevronLeft size={12} /> Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateMarker('next')}
+                      className="flex h-7 flex-1 items-center justify-center gap-1 rounded border border-white/10 bg-white/5 text-[10px] font-bold text-gray-300 transition-all hover:bg-white/10 disabled:opacity-40"
+                      disabled={!frameMarkers.length}
+                    >
+                      Next <ChevronRight size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hybrid review items (Brand Voice / Pacing / Transitions) */}
+              <div className="space-y-2">
                 {hybridReviewItems.map((item) => {
                   const Icon = item.icon
                   const decision = reviewDecisions[item.id]
@@ -1463,62 +1633,42 @@ export default function DashboardPage() {
                           : 'border-white/10 bg-white/[0.03]'
                       }`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                      <div className="flex items-center gap-2">
+                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
                           item.needsAttention ? 'bg-amber-400/15 text-amber-200' : 'bg-white/10 text-gray-300'
                         }`}>
-                          <Icon size={16} />
+                          <Icon size={14} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="flex items-center gap-2 text-sm font-bold text-white">
-                              {item.label}
-                              <InfoTip text={item.detail} />
-                            </p>
-                            <span className="shrink-0 text-xs font-bold text-seedtag-coral">{item.value}</span>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-white">{item.label}</span>
+                            <span className="shrink-0 text-[10px] font-bold text-seedtag-coral">{item.value}</span>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-400">{item.detail}</p>
                         </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                          decision === 'confirmed'
-                            ? 'text-emerald-300'
-                            : decision === 'rejected'
-                              ? 'text-red-300'
-                              : 'text-gray-500'
-                        }`}>
-                          {decision === 'confirmed' ? 'Confirmed' : decision === 'rejected' ? 'Rejected' : 'Waiting'}
-                        </span>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1.5 ml-1">
                           <button
                             type="button"
-                            aria-label={`Confirm ${item.label}`}
-                            title={`Confirm ${item.label}`}
                             disabled={!diagnosticResult}
                             onClick={() => setHybridDecision(item.id, 'confirmed')}
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                            className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
                               decision === 'confirmed'
                                 ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
-                                : 'border-white/10 bg-white/5 text-gray-300 hover:border-emerald-400/30 hover:text-emerald-200'
+                                : 'border-white/10 bg-white/5 text-gray-400 hover:text-emerald-300'
                             }`}
                           >
-                            <Check size={15} />
+                            <Check size={13} />
                           </button>
                           <button
                             type="button"
-                            aria-label={`Reject ${item.label}`}
-                            title={`Reject ${item.label}`}
                             disabled={!diagnosticResult}
                             onClick={() => setHybridDecision(item.id, 'rejected')}
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                            className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
                               decision === 'rejected'
                                 ? 'border-red-400/40 bg-red-400/20 text-red-100'
-                                : 'border-white/10 bg-white/5 text-gray-300 hover:border-red-400/30 hover:text-red-200'
+                                : 'border-white/10 bg-white/5 text-gray-400 hover:text-red-300'
                             }`}
                           >
-                            <X size={15} />
+                            <X size={13} />
                           </button>
                         </div>
                       </div>
@@ -1848,6 +1998,226 @@ export default function DashboardPage() {
         </motion.aside>
 
       </div>
+
+      {/* Human Gate — expanded overlay */}
+      <AnimatePresence>
+        {gateExpanded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="glass-panel flex w-full max-w-6xl overflow-hidden rounded-2xl border-white/10"
+              style={{ height: 'min(88vh, 680px)' }}
+            >
+              {/* Left: video */}
+              <div className="flex flex-col flex-1 min-w-0 p-5 gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                    Human Gate Review
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setGateExpanded(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-400 transition-all hover:border-red-400/30 hover:text-red-300"
+                    aria-label="Close review"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <VideoCortex
+                    onTimeUpdate={handleTimeUpdate}
+                    videoUrl={previewUrl}
+                    selectedFileName={selectedFile?.name ?? uploadResult?.filename ?? null}
+                    requestId={uploadResult?.request_id ?? diagnosticResult?.request_id ?? null}
+                    isUploading={false}
+                    isAnalyzing={false}
+                    uploadProgress={uploadProgress}
+                    analysisProgress={analysisProgress}
+                    onSelectFile={selectFile}
+                    onUpload={uploadVideo}
+                    onAnalyze={analyzeCreative}
+                    canAnalyze={false}
+                    markers={timelineMarkers}
+                    activeMarkerIndex={activeMarkerIndex}
+                    onMarkerClick={handleMarkerClick}
+                    seekTarget={videoSeekTarget}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 text-center">
+                  Click a marker on the timeline or use Prev / Next to navigate
+                </p>
+              </div>
+
+              {/* Right: review panel */}
+              <div className="w-80 shrink-0 flex flex-col gap-4 border-l border-white/10 p-5 overflow-y-auto custom-scrollbar">
+                {/* Marker counter */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                    Frame Markers
+                  </span>
+                  <span className="text-[10px] font-bold text-amber-300">
+                    {Object.keys(markerDecisions).length} / {frameMarkers.length} reviewed
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-amber-400 transition-all duration-300"
+                    style={{ width: `${frameMarkers.length ? (Object.keys(markerDecisions).length / frameMarkers.length) * 100 : 0}%` }}
+                  />
+                </div>
+
+                {/* Active marker card */}
+                {activeMarkerIndex !== null && (() => {
+                  const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
+                  if (!m) return null
+                  const decision = markerDecisions[m.frameIndex]
+                  const note = markerNotes[m.frameIndex] ?? ''
+                  const currentIdx = frameMarkers.findIndex((fm) => fm.frameIndex === m.frameIndex)
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Navigator */}
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigateMarker('prev')}
+                          disabled={currentIdx <= 0}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-300 transition-all hover:bg-white/10 disabled:opacity-30"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-[11px] font-bold text-white">
+                          {currentIdx + 1} of {frameMarkers.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigateMarker('next')}
+                          disabled={currentIdx >= frameMarkers.length - 1}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-300 transition-all hover:bg-white/10 disabled:opacity-30"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+
+                      {/* Marker info */}
+                      <div className={`rounded-lg border p-3 space-y-2 ${
+                        m.type === 'low-attention'
+                          ? 'border-red-400/25 bg-red-500/10'
+                          : 'border-amber-400/25 bg-amber-400/10'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                            m.type === 'low-attention' ? 'text-red-300' : 'text-amber-300'
+                          }`}>
+                            {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
+                          </span>
+                          <span className="text-[10px] font-mono text-gray-400">{m.timestampSeconds}s</span>
+                        </div>
+                        <div className="flex gap-3 text-[10px] text-gray-400">
+                          <span>Attention: <strong className="text-white">{m.attentionScore.toFixed(0)}</strong></span>
+                          <span>Load: <strong className="text-white">{(m.sensoryLoad * 100).toFixed(0)}%</strong></span>
+                        </div>
+                        <p className="text-[11px] leading-snug text-gray-300">{m.cognitiveResponse}</p>
+                        <p className="text-[11px] leading-snug text-gray-400 italic">{m.recommendation}</p>
+                      </div>
+
+                      {/* Decision buttons */}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setMarkerDecision(m.frameIndex, 'ok')}
+                          className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-bold transition-all ${
+                            decision === 'ok'
+                              ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
+                              : 'border-white/10 bg-white/5 text-gray-300 hover:border-emerald-400/30 hover:text-emerald-200'
+                          }`}
+                        >
+                          <Check size={14} /> OK
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMarkerDecision(m.frameIndex, 'flagged')}
+                          className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-bold transition-all ${
+                            decision === 'flagged'
+                              ? 'border-red-400/40 bg-red-400/20 text-red-100'
+                              : 'border-white/10 bg-white/5 text-gray-300 hover:border-red-400/30 hover:text-red-200'
+                          }`}
+                        >
+                          <X size={14} /> Flag
+                        </button>
+                      </div>
+
+                      {/* Note */}
+                      <div className="space-y-1">
+                        <label className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                          <StickyNote size={10} /> Note
+                        </label>
+                        <textarea
+                          rows={3}
+                          placeholder="Add a note for this frame…"
+                          value={note}
+                          onChange={(e) => setMarkerNotes((current) => ({ ...current, [m.frameIndex]: e.target.value }))}
+                          className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-gray-200 placeholder-gray-600 outline-none focus:border-amber-400/30 focus:ring-0"
+                        />
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {activeMarkerIndex === null && (
+                  <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                    <span className="text-2xl">👆</span>
+                    <p className="text-xs text-gray-400">Click a marker on the timeline<br />or use Prev / Next to start</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => navigateMarker('next')}
+                        className="flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs font-bold text-amber-200 transition-all hover:bg-amber-400/20"
+                      >
+                        Start Review <ChevronRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="border-t border-white/10 pt-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Signal Review</p>
+                  {hybridReviewItems.map((item) => {
+                    const Icon = item.icon
+                    const decision = reviewDecisions[item.id]
+                    return (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <Icon size={13} className={item.needsAttention ? 'text-amber-300' : 'text-gray-400'} />
+                        <span className="flex-1 text-[11px] text-gray-300">{item.label}</span>
+                        <span className="text-[10px] text-seedtag-coral">{item.value}</span>
+                        <button type="button" disabled={!diagnosticResult} onClick={() => setHybridDecision(item.id, 'confirmed')}
+                          className={`flex h-6 w-6 items-center justify-center rounded border transition-all disabled:opacity-30 ${decision === 'confirmed' ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100' : 'border-white/10 bg-white/5 text-gray-400 hover:text-emerald-300'}`}>
+                          <Check size={11} />
+                        </button>
+                        <button type="button" disabled={!diagnosticResult} onClick={() => setHybridDecision(item.id, 'rejected')}
+                          className={`flex h-6 w-6 items-center justify-center rounded border transition-all disabled:opacity-30 ${decision === 'rejected' ? 'border-red-400/40 bg-red-400/20 text-red-100' : 'border-white/10 bg-white/5 text-gray-400 hover:text-red-300'}`}>
+                          <X size={11} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   )
 }

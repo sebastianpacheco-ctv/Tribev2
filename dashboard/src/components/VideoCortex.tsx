@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Play, Pause, Upload, Loader2, Maximize, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'framer-motion'
 
+export interface TimelineMarker {
+  frameIndex: number
+  timestampSeconds: number
+  type: 'low-attention' | 'high-load'
+}
+
 interface VideoCortexProps {
   onTimeUpdate?: (progress: number) => void;
   videoUrl?: string | null;
@@ -17,6 +23,10 @@ interface VideoCortexProps {
   onUpload: () => void;
   onAnalyze: () => void;
   canAnalyze: boolean;
+  markers?: TimelineMarker[];
+  activeMarkerIndex?: number | null;
+  onMarkerClick?: (frameIndex: number, timestampSeconds: number) => void;
+  seekTarget?: number | null;
 }
 
 function formatTime(seconds: number) {
@@ -78,6 +88,10 @@ export default function VideoCortex({
   onUpload,
   onAnalyze,
   canAnalyze,
+  markers = [],
+  activeMarkerIndex = null,
+  onMarkerClick,
+  seekTarget = null,
 }: VideoCortexProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
@@ -99,6 +113,15 @@ export default function VideoCortex({
       videoRef.current.currentTime = 0
     }
   }, [videoUrl])
+
+  // Seek video when a marker is activated externally
+  useEffect(() => {
+    if (seekTarget === null || seekTarget === undefined || !videoRef.current || !duration) return
+    videoRef.current.currentTime = Math.max(0, Math.min(seekTarget, duration))
+    const nextProgress = duration > 0 ? (videoRef.current.currentTime / duration) * 100 : 0
+    setProgress(nextProgress)
+    onTimeUpdate?.(nextProgress)
+  }, [seekTarget, duration, onTimeUpdate])
 
   const togglePlay = async () => {
     if (!videoRef.current || !videoUrl) {
@@ -244,19 +267,58 @@ export default function VideoCortex({
 
       <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-black/85 to-transparent p-4 opacity-100 transition-all duration-300 group-hover:translate-y-0">
           <div className="space-y-3">
-          <div
-            className="relative h-1 w-full cursor-pointer rounded-full bg-white/20"
-            onClick={seekVideo}
-            role="slider"
-            aria-label="Video progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(progress)}
-          >
+
+          {/* Timeline bar with markers */}
+          <div className="relative">
             <div
-              className="absolute h-full bg-seedtag-coral rounded-full transition-all duration-100"
-              style={{ width: `${progress}%` }}
-            />
+              className="relative h-1.5 w-full cursor-pointer rounded-full bg-white/20"
+              onClick={seekVideo}
+              role="slider"
+              aria-label="Video progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            >
+              <div
+                className="absolute h-full bg-seedtag-coral rounded-full transition-all duration-100"
+                style={{ width: `${progress}%` }}
+              />
+
+              {/* Marker dots */}
+              {duration > 0 && markers.map((marker) => {
+                const positionPct = Math.max(0, Math.min(100, (marker.timestampSeconds / duration) * 100))
+                const isActive = marker.frameIndex === activeMarkerIndex
+                return (
+                  <button
+                    key={marker.frameIndex}
+                    type="button"
+                    aria-label={`Review marker at ${marker.timestampSeconds}s`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMarkerClick?.(marker.frameIndex, marker.timestampSeconds)
+                    }}
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 transition-transform hover:scale-150"
+                    style={{ left: `${positionPct}%` }}
+                  >
+                    <span
+                      className={`block rounded-full border-2 transition-all ${
+                        isActive
+                          ? 'h-4 w-4 shadow-lg'
+                          : 'h-2.5 w-2.5'
+                      } ${
+                        marker.type === 'low-attention'
+                          ? isActive
+                            ? 'border-red-300 bg-red-500 shadow-red-500/60'
+                            : 'border-red-400/60 bg-red-500/80'
+                          : isActive
+                            ? 'border-amber-300 bg-amber-500 shadow-amber-500/60'
+                            : 'border-amber-400/60 bg-amber-500/80'
+                      }`}
+                    />
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="flex items-center justify-between text-white">
@@ -271,6 +333,11 @@ export default function VideoCortex({
               <span className="text-xs font-mono ml-2">
                 {formatTime(((progress / 100) * duration) || 0)} / {formatTime(duration)}
               </span>
+              {markers.length > 0 && (
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400/80">
+                  {markers.length} marker{markers.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-4">
