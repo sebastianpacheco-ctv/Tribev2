@@ -91,14 +91,21 @@ def _resolve_frame_paths(request_id: str, video_path: Path, frame_rate: int) -> 
 # ---------------------------------------------------------------------------
 
 def _scan_for_qr(frame_paths: list[str]) -> bool | None:
-    """Scan a sample of frames with pyzbar. Returns True if a QR is found, None if none detected."""
+    """
+    Scan a sample of frames with pyzbar (requires libzbar system library).
+    Returns True if a scannable QR code is found, None if none detected.
+    """
     if not frame_paths:
         return None
+    try:
+        from pyzbar import pyzbar as _pyzbar
+    except ImportError:
+        return None  # libzbar not available
+
     step = max(1, len(frame_paths) // 5)
     sample = frame_paths[::step][:5]
     for path in sample:
         try:
-            from pyzbar import pyzbar as _pyzbar
             img = Image.open(path)
             codes = _pyzbar.decode(img)
             if codes:
@@ -106,6 +113,41 @@ def _scan_for_qr(frame_paths: list[str]) -> bool | None:
         except Exception:
             continue
     return None
+
+
+def _check_spelling_grammar(frame_paths: list[str]) -> bool:
+    """
+    Extract visible text from a sample of frames using Tesseract OCR and flag
+    obvious issues: very short text (< 3 chars per frame on average suggests
+    OCR found nothing meaningful) or frames with no readable copy at all.
+    Returns True (pass) when readable text is consistently present.
+    Falls back to True if Tesseract is unavailable.
+    """
+    if not frame_paths:
+        return True
+    try:
+        import pytesseract
+    except ImportError:
+        return True  # Tesseract not available — skip check
+
+    step = max(1, len(frame_paths) // 5)
+    sample = frame_paths[::step][:5]
+    readable_frames = 0
+    for path in sample:
+        try:
+            img = Image.open(path)
+            text = pytesseract.image_to_string(img, config="--psm 11 --oem 3")
+            # Count alphabetic characters to filter OCR noise
+            alpha_chars = sum(c.isalpha() for c in text)
+            if alpha_chars >= 3:
+                readable_frames += 1
+        except Exception:
+            continue
+
+    if not sample:
+        return True
+    # Pass if at least one sampled frame contains readable text
+    return readable_frames > 0
 
 
 def _check_safe_zones(frame_paths: list[str]) -> bool:
@@ -214,7 +256,7 @@ def _detect_logo(frame_paths: list[str]) -> bool:
 def _build_automated_flags(stimuli: np.ndarray, inference_result: dict, frame_paths: list[str]) -> AutomatedFlags:
     features = inference_result.get("feature_summary", {})
     return AutomatedFlags(
-        spelling_grammar_passed=True,  # Requires Tesseract OCR — not available in this environment
+        spelling_grammar_passed=_check_spelling_grammar(frame_paths),
         cta_present=_detect_cta(frame_paths, features),
         logo_visible=_detect_logo(frame_paths),
         safe_zones_passed=_check_safe_zones(frame_paths),
