@@ -66,7 +66,16 @@
 - [x] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
     - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
 
-#### Bloque 2 — Features de valor (completan el producto)
+#### Bloque 2 — Análisis por formato Seedtag (fundacional para análisis correcto)
+- [ ] **Step 6.14: Format-aware analysis (Frame / Standard / Bespoke)**
+    - Selector de formato en la UI antes de "Run Diagnostic": [Frame] [Standard Video] [Bespoke Video].
+    - **Frame**: analizar solo el área exterior del branded frame (excluir video del cliente). Área cliente detectada: ~x=501-939, y=38-818 en canvas 1920x1080 (9:16 vertical central). Recomendaciones accionables por Seedtag.
+    - **Standard**: detectar bordes negros (pillarbox/letterbox) con OpenCV, recortar al área activa antes de CLIP. Análisis informativo — Seedtag no puede editar el creative.
+    - **Bespoke**: analizar frame completo. Todo es accionable — Seedtag crea el creative de cero.
+    - Adaptar QA checks y recomendaciones según formato: safe zones, CTA, logo varían por tipo.
+    - Videos de referencia analizados: Frame 1-3, Standard 1-2, Bespoke en `Videos examples/`.
+
+#### Bloque 3 — Features de valor (completan el producto)
 - [ ] **Step 6.2: Markers en PDF**
     - Incluir decisiones OK/Flag y notas del Human Gate en el PDF exportado.
     - Agregar sección "Frame Review" en `createDiagnosticPdf` en `page.tsx`.
@@ -76,12 +85,12 @@
     - Vista en dashboard: lista con fecha, nombre de archivo, attention score, decisión final.
     - Click en resultado → carga el diagnóstico sin re-analizar.
 
-#### Bloque 3 — Visual (impacto estético, complejidad alta)
+#### Bloque 4 — Visual (impacto estético, complejidad alta)
 - [ ] **Step 6.1: BrainViewer Anatómico**
     - Reemplazar esfera de partículas por forma matemática de cerebro.
     - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
 
-#### Bloque 5 — Motor de inferencia real
+#### Bloque 5 — Lifecycle y motor
 - [x] **Step 6.12: Integrar modelo de visión real (CLIP)**
     - Reemplazar `TribeInferenceEngine` mock por `open_clip` (ViT-B/32 o similar).
     - Los scores de atención, sensory_load y region_activations pasarían a ser predicciones reales basadas en embeddings visuales.
@@ -93,7 +102,7 @@
     - Modo "Post-campaña": importar métricas reales (viewability, CTR) y cruzarlas con los scores predichos para calibrar el modelo.
     - Base: requiere historial de diagnósticos (6.9) y motor real (6.12).
 
-#### Bloque 4 — Seguridad e infraestructura (antes de cualquier deploy)
+#### Bloque 6 — Seguridad e infraestructura (antes de cualquier deploy)
 - [ ] **Step 6.3: Auth en la API**
     - Middleware FastAPI con API key en header.
     - Necesario antes de exponer en cualquier red.
