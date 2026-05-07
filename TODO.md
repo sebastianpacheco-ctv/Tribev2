@@ -40,7 +40,22 @@
     - Limpieza `tmp/diagnostics` TTL 24h (startup + background task + endpoint DELETE /cleanup).
     - npm audit: Next.js 14.2.3 → 14.2.35 (elimina critical CVEs).
 
-## Phase 6: Pendiente
+## Phase 6: En curso / Pendiente
+
+### Completados esta fase
+- [x] **Step 6.5: Simplificar UX de upload en VideoCortex**
+    - 3 botones colapsados en 1 botón progresivo: Select Creative → Run Diagnostic → Analyzing… → New Creative.
+    - Upload ocurre internamente dentro de `analyzeCreative`, invisible para el usuario.
+    - `hideControls` prop elimina botones en el overlay del Human Gate Review.
+- [x] **Step 6.6: Frame sampling adaptativo**
+    - Cap automático de 60 frames en `VideoProcessor.extract_frames` — reduce fps si el video es largo.
+    - Sin cambios de API ni UI: completamente transparente.
+- [x] **Step 6.7: Modos de análisis (Quick / Standard / Deep)**
+    - UI ya implementada: selector en el sidebar con 3 perfiles (1/2/3 fps).
+    - Backend: `frame_rate: float` en schema, `_request_frames_dir` con path float-safe, clip `max(0.1, ...)`.
+    - El adaptive cap de 6.6 aplica sobre el fps elegido.
+
+### Pendientes
 - [ ] **Step 6.1: BrainViewer Anatómico**
     - Reemplazar esfera de partículas por forma matemática de cerebro.
     - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
@@ -54,17 +69,12 @@
 - [ ] **Step 6.4: Next.js 15/16 migration**
     - 5 vulnerabilidades restantes en npm audit.
     - Riesgo bajo en localhost. Migración mayor, scope separado.
-- [ ] **Step 6.5: Simplificar UX de upload en VideoCortex**
-    - Colapsar 3 botones (Choose Video / Upload to Engine / Run Diagnostic) en 1 con estados progresivos.
-    - Sin video → "Select Creative" (abre file picker).
-    - Video seleccionado → "Run Diagnostic" (hace upload + análisis en secuencia automáticamente).
-    - Procesando → barra de progreso, sin botón adicional.
-    - Completo → "New Creative" o desaparece.
-    - El upload sigue existiendo internamente — el usuario no lo ve como paso separado.
-- [x] **Step 6.6: Frame sampling adaptativo**
-    - Cap automático de 60 frames en `VideoProcessor.extract_frames` — reduce fps si el video es largo.
-    - Sin cambios de API ni UI: completamente transparente.
-- [x] **Step 6.7: Modos de análisis (Quick / Standard / Deep)**
-    - UI ya implementada: selector en el sidebar con 3 perfiles (1/2/3 fps).
-    - Backend: `frame_rate: float` en schema, `_request_frames_dir` con path float-safe, clip `max(0.1, ...)`.
-    - El adaptive cap de 6.6 aplica sobre el fps elegido.
+- [ ] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
+    - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
+    - Evita que el usuario tenga que scrollear hasta el player para resetear.
+- [ ] **Step 6.9: Historial de diagnósticos (vista de carpetas)**
+    - Backend: persistir `DiagnosticResult` en JSON/SQLite por `request_id` al finalizar análisis.
+    - Nuevo endpoint `GET /diagnostics` que lista los resultados guardados.
+    - Vista en dashboard: lista con fecha, nombre de archivo, attention score, decisión final.
+    - Click en resultado → carga el diagnóstico sin re-analizar.
+    - Filtros básicos: por fecha, score, decisión (Approved/Revisions).

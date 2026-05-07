@@ -1269,7 +1269,7 @@ export default function DashboardPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="w-full"
+              className="w-[70%] mx-auto"
             >
               <VideoCortex
                 onTimeUpdate={handleTimeUpdate}
@@ -1284,6 +1284,8 @@ export default function DashboardPage() {
                 onUpload={uploadVideo}
                 onAnalyze={analyzeCreative}
                 canAnalyze={Boolean(uploadResult?.request_id || selectedFile)}
+                isDone={Boolean(diagnosticResult)}
+                onReset={resetSession}
                 markers={timelineMarkers}
                 activeMarkerIndex={activeMarkerIndex}
                 onMarkerClick={handleMarkerClick}
@@ -2130,8 +2132,7 @@ export default function DashboardPage() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="glass-panel flex w-full max-w-6xl overflow-hidden rounded-2xl border-white/10"
-              style={{ height: 'min(96vh, 960px)' }}
+              className="glass-panel flex w-full max-w-[90vw] max-h-[90vh] overflow-hidden rounded-2xl border-white/10"
             >
               {/* Left: video */}
               <div className="flex flex-col flex-1 min-w-0 p-5 gap-4">
@@ -2149,7 +2150,7 @@ export default function DashboardPage() {
                     <X size={16} />
                   </button>
                 </div>
-                <div className="flex-1 min-h-0">
+                <div className="w-[90%] mx-auto">
                   <VideoCortex
                     onTimeUpdate={handleTimeUpdate}
                     videoUrl={previewUrl}
@@ -2163,6 +2164,7 @@ export default function DashboardPage() {
                     onUpload={uploadVideo}
                     onAnalyze={analyzeCreative}
                     canAnalyze={false}
+                    hideControls
                     markers={timelineMarkers}
                     activeMarkerIndex={activeMarkerIndex}
                     onMarkerClick={handleMarkerClick}
@@ -2175,13 +2177,13 @@ export default function DashboardPage() {
               </div>
 
               {/* Right: review panel */}
-              <div className="w-80 shrink-0 flex flex-col gap-4 border-l border-white/10 p-5 overflow-y-auto custom-scrollbar">
+              <div className="w-[420px] shrink-0 flex flex-col gap-4 border-l border-white/10 p-6 overflow-y-auto custom-scrollbar">
                 {/* Marker counter */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-400">
                     Frame Markers
                   </span>
-                  <span className="text-[10px] font-bold text-amber-300">
+                  <span className="text-xs font-bold text-amber-300">
                     {Object.keys(markerDecisions).length} / {frameMarkers.length} reviewed
                   </span>
                 </div>
@@ -2214,7 +2216,7 @@ export default function DashboardPage() {
                         >
                           <ChevronLeft size={16} />
                         </button>
-                        <span className="text-[11px] font-bold text-white">
+                        <span className="text-sm font-bold text-white">
                           {currentIdx + 1} of {frameMarkers.length}
                         </span>
                         <button
@@ -2234,19 +2236,19 @@ export default function DashboardPage() {
                           : 'border-amber-400/25 bg-amber-400/10'
                       }`}>
                         <div className="flex items-center justify-between">
-                          <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                          <span className={`text-xs font-bold uppercase tracking-widest ${
                             m.type === 'low-attention' ? 'text-red-300' : 'text-amber-300'
                           }`}>
                             {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
                           </span>
-                          <span className="text-[10px] font-mono text-gray-400">{m.timestampSeconds}s</span>
+                          <span className="text-xs font-mono text-gray-400">{m.timestampSeconds}s</span>
                         </div>
-                        <div className="flex gap-3 text-[10px] text-gray-400">
+                        <div className="flex gap-4 text-xs text-gray-400">
                           <span>Attention: <strong className="text-white">{m.attentionScore.toFixed(0)}</strong></span>
                           <span>Load: <strong className="text-white">{(m.sensoryLoad * 100).toFixed(0)}%</strong></span>
                         </div>
-                        <p className="text-[11px] leading-snug text-gray-300">{m.cognitiveResponse}</p>
-                        <p className="text-[11px] leading-snug text-gray-400 italic">{m.recommendation}</p>
+                        <p className="text-sm leading-snug text-gray-300">{m.cognitiveResponse}</p>
+                        <p className="text-sm leading-snug text-gray-400 italic">{m.recommendation}</p>
                       </div>
 
                       {/* Decision buttons */}
@@ -2277,15 +2279,15 @@ export default function DashboardPage() {
 
                       {/* Note */}
                       <div className="space-y-1">
-                        <label className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                          <StickyNote size={10} /> Note
+                        <label className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-gray-500">
+                          <StickyNote size={12} /> Note
                         </label>
                         <textarea
                           rows={3}
                           placeholder="Add a note for this frame…"
                           value={note}
                           onChange={(e) => setMarkerNotes((current) => ({ ...current, [m.frameIndex]: e.target.value }))}
-                          className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-gray-200 placeholder-gray-600 outline-none focus:border-amber-400/30 focus:ring-0"
+                          className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-amber-400/30 focus:ring-0"
                         />
                       </div>
                     </div>
@@ -2309,7 +2311,7 @@ export default function DashboardPage() {
                 )}
 
                 <div className="border-t border-white/10 pt-4 space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Signal Review</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Signal Review</p>
                   {hybridReviewItems.map((item) => {
                     const Icon = item.icon
                     const decision = reviewDecisions[item.id]

@@ -23,6 +23,9 @@ interface VideoCortexProps {
   onUpload: () => void;
   onAnalyze: () => void;
   canAnalyze: boolean;
+  hideControls?: boolean;
+  isDone?: boolean;
+  onReset?: () => void;
   markers?: TimelineMarker[];
   activeMarkerIndex?: number | null;
   onMarkerClick?: (frameIndex: number, timestampSeconds: number) => void;
@@ -88,6 +91,9 @@ export default function VideoCortex({
   onUpload,
   onAnalyze,
   canAnalyze,
+  hideControls = false,
+  isDone = false,
+  onReset,
   markers = [],
   activeMarkerIndex = null,
   onMarkerClick,
@@ -381,31 +387,35 @@ export default function VideoCortex({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => inputRef.current?.click()}
-              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isUploading || isAnalyzing}
-            >
-              Choose Video
-            </button>
-            <button
-              onClick={onUpload}
-              disabled={!selectedFileName || isUploading || isAnalyzing}
-              className="flex items-center gap-2 rounded-lg border border-seedtag-coral/30 bg-seedtag-coral/15 px-4 py-2 text-xs font-bold text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {isUploading ? 'Uploading...' : 'Upload to Engine'}
-            </button>
-            <button
-              onClick={onAnalyze}
-              disabled={!canAnalyze || isUploading || isAnalyzing}
-              className="flex items-center gap-2 rounded-lg bg-seedtag-coral px-4 py-2 text-xs font-bold text-white shadow-lg shadow-seedtag-coral/20 transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isUploading || isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-              {isUploading ? 'Uploading...' : isAnalyzing ? 'Analyzing...' : 'Run Diagnostic'}
-            </button>
-          </div>
+          {!hideControls && selectedFileName && (
+            <div className="flex items-center gap-3">
+              {(isUploading || isAnalyzing) ? (
+                <button
+                  disabled
+                  className="flex items-center gap-2 rounded-lg bg-seedtag-coral/60 px-5 py-2 text-xs font-bold text-white cursor-not-allowed"
+                >
+                  <Loader2 size={14} className="animate-spin" />
+                  {isUploading ? 'Uploading...' : 'Analyzing...'}
+                </button>
+              ) : isDone ? (
+                <button
+                  onClick={onReset}
+                  className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-5 py-2 text-xs font-bold text-white transition-all hover:bg-white/15"
+                >
+                  New Creative
+                </button>
+              ) : (
+                <button
+                  onClick={onAnalyze}
+                  disabled={!canAnalyze}
+                  className="flex items-center gap-2 rounded-lg bg-seedtag-coral px-5 py-2 text-xs font-bold text-white shadow-lg shadow-seedtag-coral/20 transition-all hover:bg-seedtag-coral/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Play size={14} fill="currentColor" />
+                  Run Diagnostic
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
