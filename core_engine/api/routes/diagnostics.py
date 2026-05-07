@@ -88,6 +88,69 @@ def _resolve_frame_paths(request_id: str, video_path: Path, frame_rate: int) -> 
     return _extract_frames_for_request(video_path, frames_dir, frame_rate)
 
 # ---------------------------------------------------------------------------
+# Format-aware frame preprocessing (6.14)
+# ---------------------------------------------------------------------------
+
+def _crop_to_active_area(stimuli: np.ndarray) -> np.ndarray:
+    """Standard Video: crop out black pillarbox/letterbox borders."""
+    mean_frame = stimuli.mean(axis=0)
+    luminance = (0.2126 * mean_frame[..., 0] + 0.7152 * mean_frame[..., 1] + 0.0722 * mean_frame[..., 2])
+    col_means = luminance.mean(axis=0)
+    row_means = luminance.mean(axis=1)
+    active_cols = np.where(col_means > 0.06)[0]
+    active_rows = np.where(row_means > 0.06)[0]
+    if len(active_cols) < 10 or len(active_rows) < 10:
+        return stimuli
+    x0, x1 = int(active_cols[0]), int(active_cols[-1]) + 1
+    y0, y1 = int(active_rows[0]), int(active_rows[-1]) + 1
+    return stimuli[:, y0:y1, x0:x1, :]
+
+
+def _mask_client_video_in_frame(stimuli: np.ndarray) -> np.ndarray:
+    """
+    Frame format: mask out the inner client video rectangle, keeping only
+    Seedtag's branded frame for analysis. Detects inner boundary via edge
+    detection; falls back to proportional estimate (26%/49% x, 4%/76% y)
+    derived from reference creatives.
+    """
+    n, h, w, _ = stimuli.shape
+    masked = stimuli.copy()
+
+    mean_frame = stimuli.mean(axis=0)
+    gray = (0.2126 * mean_frame[..., 0] + 0.7152 * mean_frame[..., 1] + 0.0722 * mean_frame[..., 2])
+    gray_u8 = (gray * 255).astype(np.uint8)
+    edges = cv2.Canny(gray_u8, 30, 100)
+
+    cy0, cy1 = int(h * 0.05), int(h * 0.95)
+    cx0, cx1 = int(w * 0.15), int(w * 0.85)
+    h_proj = edges[cy0:cy1, :].sum(axis=1)
+    v_proj = edges[:, cx0:cx1].sum(axis=0)
+
+    mid_h = (cy1 - cy0) // 2
+    mid_w = (cx1 - cx0) // 2
+    inner_top = cy0 + int(h_proj[:mid_h].argmax()) if h_proj[:mid_h].max() > 0 else int(h * 0.04)
+    inner_bot = cy0 + mid_h + int(h_proj[mid_h:].argmax()) if h_proj[mid_h:].max() > 0 else int(h * 0.76)
+    inner_left = cx0 + int(v_proj[:mid_w].argmax()) if v_proj[:mid_w].max() > 0 else int(w * 0.26)
+    inner_right = cx0 + mid_w + int(v_proj[mid_w:].argmax()) if v_proj[mid_w:].max() > 0 else int(w * 0.49)
+
+    if (inner_right - inner_left) < w * 0.1 or (inner_bot - inner_top) < h * 0.1:
+        inner_top, inner_bot = int(h * 0.04), int(h * 0.76)
+        inner_left, inner_right = int(w * 0.26), int(w * 0.49)
+
+    masked[:, inner_top:inner_bot, inner_left:inner_right, :] = 0.5
+    return masked
+
+
+def _preprocess_stimuli_for_format(stimuli: np.ndarray, format_type: str) -> np.ndarray:
+    """Apply format-specific preprocessing before inference."""
+    if format_type == "standard_video":
+        return _crop_to_active_area(stimuli)
+    if format_type == "frame":
+        return _mask_client_video_in_frame(stimuli)
+    return stimuli  # bespoke: full frame
+
+
+# ---------------------------------------------------------------------------
 # Real QA checks
 # ---------------------------------------------------------------------------
 
@@ -500,8 +563,10 @@ async def analyze_creative(request: VideoInferenceRequest):
 
     processor = VideoProcessor(output_dir=str(_request_frames_dir(request_id, frame_rate)))
     stimuli = processor.get_frame_grid_analysis(frame_paths)
-    inference_result = engine.predict(stimuli)
-    frame_insights_data = engine.predict_frame_sequence(stimuli, frame_rate)
+    format_type = request.format_type or "bespoke"
+    stimuli_for_inference = _preprocess_stimuli_for_format(stimuli, format_type)
+    inference_result = engine.predict(stimuli_for_inference)
+    frame_insights_data = engine.predict_frame_sequence(stimuli_for_inference, frame_rate)
 
     try:
         gemini_explanation_str = await insight_gen.generate_explanation(inference_result)
@@ -533,6 +598,7 @@ async def analyze_creative(request: VideoInferenceRequest):
         "filename": video_path.name,
         "frame_rate": frame_rate,
         "analysis_depth": request.analysis_depth,
+        "format_type": format_type,
         "frames_extracted": len(frame_paths),
         "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

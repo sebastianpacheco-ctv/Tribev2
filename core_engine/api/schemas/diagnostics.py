@@ -63,6 +63,7 @@ class VideoInferenceRequest(BaseModel):
     video_url: Optional[str] = None
     frame_rate: float = 1.0
     analysis_depth: str = "standard"
+    format_type: str = "bespoke"  # "bespoke" | "frame" | "standard_video"
 
 class UploadVideoResponse(BaseModel):
     request_id: str

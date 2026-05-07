@@ -28,6 +28,8 @@ interface VideoCortexProps {
   onReset?: () => void;
   analysisDepth?: 'quick' | 'standard' | 'deep';
   onDepthChange?: (depth: 'quick' | 'standard' | 'deep') => void;
+  formatType?: 'bespoke' | 'frame' | 'standard_video';
+  onFormatChange?: (format: 'bespoke' | 'frame' | 'standard_video') => void;
   markers?: TimelineMarker[];
   activeMarkerIndex?: number | null;
   onMarkerClick?: (frameIndex: number, timestampSeconds: number) => void;
@@ -98,6 +100,8 @@ export default function VideoCortex({
   onReset,
   analysisDepth = 'standard',
   onDepthChange,
+  formatType = 'bespoke',
+  onFormatChange,
   markers = [],
   activeMarkerIndex = null,
   onMarkerClick,
@@ -393,6 +397,29 @@ export default function VideoCortex({
 
           {!hideControls && selectedFileName && (
             <div className="flex items-center gap-3 flex-wrap">
+              {!isUploading && !isAnalyzing && !isDone && onFormatChange && (
+                <div className="flex rounded-lg border border-white/10 overflow-hidden">
+                  {([
+                    { key: 'bespoke', label: 'Bespoke' },
+                    { key: 'frame', label: 'Frame' },
+                    { key: 'standard_video', label: 'Standard' },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => onFormatChange(key)}
+                      className={`px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${
+                        formatType === key
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {!isUploading && !isAnalyzing && !isDone && onDepthChange && (
                 <div className="flex rounded-lg border border-white/10 overflow-hidden">
                   {(['quick', 'standard', 'deep'] as const).map((d) => (

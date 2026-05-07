@@ -791,6 +791,7 @@ export default function DashboardPage() {
   const [voxelMode, setVoxelMode] = useState(false)
   const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>('standard')
   const [frameRate, setFrameRate] = useState(2)
+  const [formatType, setFormatType] = useState<'bespoke' | 'frame' | 'standard_video'>('bespoke')
   const [reviewDecisions, setReviewDecisions] = useState<Partial<Record<HybridReviewKey, ReviewDecision>>>({})
   const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | null>(null)
   const [markerDecisions, setMarkerDecisions] = useState<Record<number, MarkerDecision>>({})
@@ -993,6 +994,7 @@ export default function DashboardPage() {
           request_id: currentUpload.request_id,
           frame_rate: frameRate,
           analysis_depth: analysisDepth,
+          format_type: formatType,
         }),
       })
 
@@ -1297,6 +1299,8 @@ export default function DashboardPage() {
                 onReset={resetSession}
                 analysisDepth={analysisDepth}
                 onDepthChange={(d) => setAnalysisProfile(d, d === 'quick' ? 1 : d === 'deep' ? 3 : 2)}
+                formatType={formatType}
+                onFormatChange={setFormatType}
                 markers={timelineMarkers}
                 activeMarkerIndex={activeMarkerIndex}
                 onMarkerClick={handleMarkerClick}
