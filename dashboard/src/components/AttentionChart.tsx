@@ -55,17 +55,21 @@ export default function AttentionChart({
     return () => ro.disconnect()
   }, [])
 
-  // Non-passive wheel listener so we can preventDefault for zoom (React synthetic events are passive)
+  // Non-passive wheel listener — always preventDefault to stop scroll bubbling to parent.
+  // Pan (horizontal) and zoom (vertical) are handled manually.
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      // Horizontal scroll → let overflow-x-auto handle panning naturally
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
-      // Vertical scroll → zoom
       e.preventDefault()
-      const factor = e.deltaY < 0 ? 1.25 : 0.8
-      setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor)))
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        // Horizontal scroll → pan the chart
+        el.scrollLeft += e.deltaX
+      } else {
+        // Vertical scroll → zoom
+        const factor = e.deltaY < 0 ? 1.25 : 0.8
+        setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor)))
+      }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
