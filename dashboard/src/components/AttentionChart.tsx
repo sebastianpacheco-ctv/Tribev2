@@ -55,6 +55,22 @@ export default function AttentionChart({
     return () => ro.disconnect()
   }, [])
 
+  // Non-passive wheel listener so we can preventDefault for zoom (React synthetic events are passive)
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      // Horizontal scroll → let overflow-x-auto handle panning naturally
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+      // Vertical scroll → zoom
+      e.preventDefault()
+      const factor = e.deltaY < 0 ? 1.25 : 0.8
+      setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor)))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   if (frames.length < 2) return null
   const maxT = Math.max(...frames.map((f) => f.timestamp_seconds))
   if (maxT <= 0) return null
@@ -97,11 +113,7 @@ export default function AttentionChart({
     onMarkerClick?.(f.frame_index, f.timestamp_seconds)
   }
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const factor = e.deltaY < 0 ? 1.25 : 0.8
-    setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor)))
-  }
+  // Handled via non-passive DOM listener in useEffect above
 
   // Geometry
   const areaPoints = [
@@ -156,7 +168,6 @@ export default function AttentionChart({
         ref={wrapperRef}
         className="overflow-x-auto"
         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.08) transparent' }}
-        onWheel={handleWheel}
       >
         <svg
           ref={svgRef}

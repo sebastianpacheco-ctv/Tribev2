@@ -1404,6 +1404,52 @@ export default function DashboardPage() {
               })()}
             </AnimatePresence>
 
+            {/* Stat cards */}
+            <div className="grid grid-cols-3 gap-4">
+              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+                <StatCard
+                  title="Attention Prediction"
+                  value={`${(diagnosticResult?.attention_score ?? activation * 100).toFixed(1)}`}
+                  unit="%"
+                  trend={diagnosticResult ? `${diagnosticResult.frames_analyzed} Frames` : 'Awaiting Upload'}
+                  icon={Target}
+                  info={RESULT_EXPLAINERS.attention}
+                />
+              </motion.div>
+              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
+                <StatCard
+                  title="Neural Resonance"
+                  value={`${(diagnosticResult?.neural_resonance ?? 0.8 + activation * 0.2).toFixed(2)}`}
+                  unit="Index"
+                  trend={diagnosticResult ? `${(diagnosticResult.sensory_load * 100).toFixed(1)}% Load` : 'Simulated'}
+                  icon={Zap}
+                  info={RESULT_EXPLAINERS.resonance}
+                />
+              </motion.div>
+              <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
+                <StatCard
+                  title="Strategy Category"
+                  value={diagnosticResult?.final_decision.strategy_category ?? region.toUpperCase()}
+                  unit=""
+                  trend={diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Needs Revision') : 'Processing'}
+                  icon={Brain}
+                  info={RESULT_EXPLAINERS.strategy}
+                />
+              </motion.div>
+            </div>
+
+            {errorMessage && (
+              <div className="glass-card border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+                {errorMessage}
+              </div>
+            )}
+
+            {infoMessage && !errorMessage && (
+              <div className="glass-card border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+                {infoMessage}
+              </div>
+            )}
+
             {/* Attention Timeline Chart */}
             {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
               <AttentionChart
@@ -1414,55 +1460,6 @@ export default function DashboardPage() {
               />
             )}
           </div>
-
-          <div className="grid grid-cols-3 gap-6 mb-4 px-4">
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-              <StatCard
-                title="Attention Prediction"
-                value={`${(diagnosticResult?.attention_score ?? activation * 100).toFixed(1)}`}
-                unit="%"
-                trend={diagnosticResult ? `${diagnosticResult.frames_analyzed} Frames` : 'Awaiting Upload'}
-                icon={Target}
-                info={RESULT_EXPLAINERS.attention}
-              />
-            </motion.div>
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
-              <StatCard
-                title="Neural Resonance"
-                value={`${(diagnosticResult?.neural_resonance ?? 0.8 + activation * 0.2).toFixed(2)}`}
-                unit="Index"
-                trend={diagnosticResult ? `${(diagnosticResult.sensory_load * 100).toFixed(1)}% Load` : 'Simulated'}
-                icon={Zap}
-                info={RESULT_EXPLAINERS.resonance}
-              />
-            </motion.div>
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
-              <StatCard
-                title="Strategy Category"
-                value={diagnosticResult?.final_decision.strategy_category ?? region.toUpperCase()}
-                unit=""
-                trend={diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Needs Revision') : 'Processing'}
-                icon={Brain}
-                info={RESULT_EXPLAINERS.strategy}
-              />
-            </motion.div>
-          </div>
-
-          {errorMessage && (
-            <div className="mb-4 px-4">
-              <div className="glass-card border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
-                {errorMessage}
-              </div>
-            </div>
-          )}
-
-          {infoMessage && !errorMessage && (
-            <div className="mb-4 px-4">
-              <div className="glass-card border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-                {infoMessage}
-              </div>
-            </div>
-          )}
 
           <motion.footer 
             initial={{ y: 100, opacity: 0 }}
