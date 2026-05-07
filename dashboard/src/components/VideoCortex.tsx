@@ -194,7 +194,7 @@ export default function VideoCortex({
   }
 
   return (
-    <div ref={containerRef} className="glass-card overflow-hidden group relative aspect-video w-full max-w-2xl border-white/5 bg-black">
+    <div ref={containerRef} className="glass-card overflow-hidden group relative aspect-video w-full border-white/5 bg-black">
       <input
         ref={inputRef}
         type="file"

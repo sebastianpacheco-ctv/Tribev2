@@ -1262,12 +1262,12 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          <div className="flex-1 flex items-center justify-center p-8">
+          <div className="flex-1 flex flex-col justify-center px-4 pb-2 pt-2 gap-3">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="w-full max-w-3xl"
+              className="w-full"
             >
               <VideoCortex
                 onTimeUpdate={handleTimeUpdate}
@@ -1288,6 +1288,101 @@ export default function DashboardPage() {
                 seekTarget={videoSeekTarget}
               />
             </motion.div>
+
+            {/* Marker info panel — appears below video when a marker is active */}
+            <AnimatePresence>
+              {activeMarkerIndex !== null && (() => {
+                const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
+                if (!m) return null
+                const decision = markerDecisions[m.frameIndex]
+                const currentIdx = frameMarkers.findIndex((fm) => fm.frameIndex === activeMarkerIndex)
+                return (
+                  <motion.div
+                    key={m.frameIndex}
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.18 }}
+                    className={`w-full rounded-xl border px-4 py-3 flex items-start gap-4 ${
+                      m.type === 'low-attention'
+                        ? 'border-red-400/25 bg-red-500/10'
+                        : 'border-amber-400/25 bg-amber-400/10'
+                    }`}
+                  >
+                    {/* Badge */}
+                    <div className={`shrink-0 mt-0.5 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${
+                      m.type === 'low-attention' ? 'bg-red-500/20 text-red-300' : 'bg-amber-400/20 text-amber-300'
+                    }`}>
+                      {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-3 mb-1">
+                        <span className="text-xs font-bold text-white">{m.timestampSeconds}s</span>
+                        <span className="text-[10px] text-gray-400">
+                          Attention: <strong className="text-white">{m.attentionScore.toFixed(0)}</strong>
+                          &nbsp;·&nbsp;Load: <strong className="text-white">{(m.sensoryLoad * 100).toFixed(0)}%</strong>
+                          &nbsp;·&nbsp;{currentIdx + 1} of {frameMarkers.length}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-snug">{m.recommendation}</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => navigateMarker('prev')}
+                        disabled={currentIdx <= 0}
+                        className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigateMarker('next')}
+                        disabled={currentIdx >= frameMarkers.length - 1}
+                        className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                      <div className="w-px h-5 bg-white/10" />
+                      <button
+                        type="button"
+                        onClick={() => setMarkerDecision(m.frameIndex, 'ok')}
+                        className={`flex h-7 w-7 items-center justify-center rounded border transition-all ${
+                          decision === 'ok'
+                            ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
+                            : 'border-white/10 bg-white/5 text-gray-400 hover:border-emerald-400/30 hover:text-emerald-300'
+                        }`}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMarkerDecision(m.frameIndex, 'flagged')}
+                        className={`flex h-7 w-7 items-center justify-center rounded border transition-all ${
+                          decision === 'flagged'
+                            ? 'border-red-400/40 bg-red-400/20 text-red-100'
+                            : 'border-white/10 bg-white/5 text-gray-400 hover:border-red-400/30 hover:text-red-300'
+                        }`}
+                      >
+                        <X size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMarkerIndex(null)}
+                        className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-500 transition-all hover:text-gray-300"
+                        aria-label="Dismiss"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </motion.div>
+                )
+              })()}
+            </AnimatePresence>
           </div>
 
           <div className="grid grid-cols-3 gap-6 mb-4 px-4">
