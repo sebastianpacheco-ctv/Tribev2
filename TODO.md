@@ -58,12 +58,12 @@
 ### Pendientes (orden recomendado)
 
 #### Bloque 1 — Identidad y UX (bajo riesgo, alto impacto visible)
-- [ ] **Step 6.10: Renombrar a NeuralSeed**
+- [x] **Step 6.10: Renombrar a NeuralSeed**
     - Cambiar "TRIBE v2" → "NeuralSeed" en título, sidebar, metadata y PDF export.
-- [ ] **Step 6.11: Analysis Depth integrado en el flujo de upload**
+- [x] **Step 6.11: Analysis Depth integrado en el flujo de upload**
     - Mostrar selector Quick/Standard/Deep inline debajo del video al seleccionar un archivo.
     - Reemplaza el selector del sidebar — el usuario elige la profundidad en contexto.
-- [ ] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
+- [x] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
     - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
 
 #### Bloque 2 — Features de valor (completan el producto)
@@ -80,6 +80,18 @@
 - [ ] **Step 6.1: BrainViewer Anatómico**
     - Reemplazar esfera de partículas por forma matemática de cerebro.
     - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
+
+#### Bloque 5 — Motor de inferencia real
+- [x] **Step 6.12: Integrar modelo de visión real (CLIP)**
+    - Reemplazar `TribeInferenceEngine` mock por `open_clip` (ViT-B/32 o similar).
+    - Los scores de atención, sensory_load y region_activations pasarían a ser predicciones reales basadas en embeddings visuales.
+    - Pipeline ya construido — solo cambia el módulo de inferencia en `core_engine/models/inference.py`.
+    - Dependencias: `open-clip-torch`, `torch` (CPU suficiente para análisis de frames estáticos).
+- [ ] **Step 6.13: Lifecycle completo del creative**
+    - Modo "Benchmark": comparar un nuevo creative contra históricos del mismo anunciante/categoría.
+    - Modo "A/B": analizar dos videos en paralelo y generar reporte comparativo.
+    - Modo "Post-campaña": importar métricas reales (viewability, CTR) y cruzarlas con los scores predichos para calibrar el modelo.
+    - Base: requiere historial de diagnósticos (6.9) y motor real (6.12).
 
 #### Bloque 4 — Seguridad e infraestructura (antes de cualquier deploy)
 - [ ] **Step 6.3: Auth en la API**
