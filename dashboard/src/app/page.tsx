@@ -1329,9 +1329,9 @@ export default function DashboardPage() {
                 <div className={`w-full rounded-xl border px-4 py-3 flex items-center gap-4 transition-colors duration-200 ${
                   m
                     ? m.type === 'low-attention'
-                      ? 'border-red-400/50 bg-red-500/25'
-                      : 'border-amber-400/50 bg-amber-400/25'
-                    : 'border-white/10 bg-white/[0.03]'
+                      ? 'border-red-400/50 bg-[#1a0505]'
+                      : 'border-amber-400/50 bg-[#1a1000]'
+                    : 'border-white/10 bg-[#0e0e0e]'
                 }`}>
                   {m ? (
                     <>
@@ -1389,6 +1389,16 @@ export default function DashboardPage() {
               )
             })()}
 
+            {/* Attention Timeline Chart — below marker panel, above stat cards */}
+            {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
+              <AttentionChart
+                frames={diagnosticResult.frame_insights}
+                markers={timelineMarkers}
+                activeMarkerIndex={activeMarkerIndex}
+                onMarkerClick={handleMarkerClick}
+              />
+            )}
+
             {/* Stat cards */}
             <div className="grid grid-cols-3 gap-4">
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
@@ -1435,15 +1445,6 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Attention Timeline Chart */}
-            {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
-              <AttentionChart
-                frames={diagnosticResult.frame_insights}
-                markers={timelineMarkers}
-                activeMarkerIndex={activeMarkerIndex}
-                onMarkerClick={handleMarkerClick}
-              />
-            )}
           </div>
 
           <motion.footer 
