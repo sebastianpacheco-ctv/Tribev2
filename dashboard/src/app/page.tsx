@@ -28,6 +28,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import BrainViewer from '@/components/BrainViewer'
 import VideoCortex, { type TimelineMarker } from '@/components/VideoCortex'
+import AttentionChart from '@/components/AttentionChart'
 
 const DIAGNOSTICS_API_BASE =
   process.env.NEXT_PUBLIC_TRIBE_API_BASE_URL ?? 'http://localhost:8000/api/v1/diagnostics'
@@ -1402,6 +1403,18 @@ export default function DashboardPage() {
                 )
               })()}
             </AnimatePresence>
+
+            {/* Attention Timeline Chart */}
+            {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
+              <div className="w-[70%] mx-auto">
+                <AttentionChart
+                  frames={diagnosticResult.frame_insights}
+                  markers={timelineMarkers}
+                  activeMarkerIndex={activeMarkerIndex}
+                  onMarkerClick={handleMarkerClick}
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-6 mb-4 px-4">

@@ -76,6 +76,13 @@
     - Videos de referencia analizados: Frame 1-3, Standard 1-2, Bespoke en `Videos examples/`.
 
 #### Bloque 3 — Features de valor (completan el producto)
+- [ ] **Step 6.15: UX de markers — pausa automática y overlay en video**
+    - Al hacer click en un marker del timeline, pausar el video automáticamente (fix en `VideoCortex.tsx` dentro del `onClick` del marker dot, antes de llamar `onMarkerClick`).
+    - Mostrar un badge overlay encima del video cuando hay un marker activo: color del marker (rojo/ámbar), timestamp y tipo. Mismo estilo `bg-black/40 backdrop-blur-md` que los chips existentes del player.
+- [ ] **Step 6.16: Attention Timeline Chart**
+    - Gráfico de área SVG (sin dependencias externas) debajo del video en el main content.
+    - Eje X: segundos del video. Curva principal: `attention_score` (coral, área rellena con gradiente). Línea secundaria: `sensory_load` (ámbar). Línea de referencia dashed en y=75 (umbral de marker). Dots clicables en posición de markers (rojo/ámbar) — click = seek + activar marker. Tooltip en hover con timestamp, score, load y dominant region.
+    - Implementado como SVG custom en React, cero deps nuevas.
 - [ ] **Step 6.2: Markers en PDF**
     - Incluir decisiones OK/Flag y notas del Human Gate en el PDF exportado.
     - Agregar sección "Frame Review" en `createDiagnosticPdf` en `page.tsx`.

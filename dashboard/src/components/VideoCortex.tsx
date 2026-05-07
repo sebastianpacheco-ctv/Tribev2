@@ -270,6 +270,29 @@ export default function VideoCortex({
           </span>
         </div>
 
+        {/* Active marker badge */}
+        {activeMarkerIndex !== null && (() => {
+          const m = markers.find((mk) => mk.frameIndex === activeMarkerIndex)
+          if (!m) return null
+          return (
+            <div className={`absolute left-4 top-12 z-10 flex items-center gap-2 rounded border px-3 py-1 backdrop-blur-md ${
+              m.type === 'low-attention'
+                ? 'border-red-400/30 bg-red-500/20'
+                : 'border-amber-400/30 bg-amber-500/20'
+            }`}>
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                m.type === 'low-attention' ? 'bg-red-400' : 'bg-amber-400'
+              }`} />
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                m.type === 'low-attention' ? 'text-red-200' : 'text-amber-200'
+              }`}>
+                {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
+              </span>
+              <span className="text-[10px] text-white/50">@ {m.timestampSeconds}s</span>
+            </div>
+          )
+        })()}
+
         {requestId && (
           <div className="absolute right-4 top-4 z-10 rounded border border-white/10 bg-black/40 px-3 py-1 backdrop-blur-md">
             <span className="text-[10px] font-bold uppercase tracking-widest text-white">
@@ -309,6 +332,10 @@ export default function VideoCortex({
                     aria-label={`Review marker at ${marker.timestampSeconds}s`}
                     onClick={(e) => {
                       e.stopPropagation()
+                      if (videoRef.current) {
+                        videoRef.current.pause()
+                        setIsPlaying(false)
+                      }
                       onMarkerClick?.(marker.frameIndex, marker.timestampSeconds)
                     }}
                     className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 transition-transform hover:scale-150"
