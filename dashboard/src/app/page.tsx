@@ -1406,14 +1406,12 @@ export default function DashboardPage() {
 
             {/* Attention Timeline Chart */}
             {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
-              <div className="w-[70%] mx-auto">
-                <AttentionChart
-                  frames={diagnosticResult.frame_insights}
-                  markers={timelineMarkers}
-                  activeMarkerIndex={activeMarkerIndex}
-                  onMarkerClick={handleMarkerClick}
-                />
-              </div>
+              <AttentionChart
+                frames={diagnosticResult.frame_insights}
+                markers={timelineMarkers}
+                activeMarkerIndex={activeMarkerIndex}
+                onMarkerClick={handleMarkerClick}
+              />
             )}
           </div>
 

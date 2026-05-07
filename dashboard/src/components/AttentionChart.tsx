@@ -90,7 +90,7 @@ export default function AttentionChart({
   const hf = hoveredFrame
 
   return (
-    <div className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 pt-3 pb-2">
+    <div className="w-full rounded-xl border border-white/10 bg-[#0e0e0e] px-3 pt-3 pb-2">
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
           Attention Timeline
