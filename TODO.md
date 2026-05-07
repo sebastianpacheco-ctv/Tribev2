@@ -67,7 +67,7 @@
     - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
 
 #### Bloque 2 — Análisis por formato Seedtag (fundacional para análisis correcto)
-- [ ] **Step 6.14: Format-aware analysis (Frame / Standard / Bespoke)**
+- [x] **Step 6.14: Format-aware analysis (Frame / Standard / Bespoke)**
     - Selector de formato en la UI antes de "Run Diagnostic": [Frame] [Standard Video] [Bespoke Video].
     - **Frame**: analizar solo el área exterior del branded frame (excluir video del cliente). Área cliente detectada: ~x=501-939, y=38-818 en canvas 1920x1080 (9:16 vertical central). Recomendaciones accionables por Seedtag.
     - **Standard**: detectar bordes negros (pillarbox/letterbox) con OpenCV, recortar al área activa antes de CLIP. Análisis informativo — Seedtag no puede editar el creative.
