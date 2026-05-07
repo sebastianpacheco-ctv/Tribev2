@@ -9,9 +9,13 @@ class VideoProcessor:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir, exist_ok=True)
 
-    def extract_frames(self, video_path: str, fps: int = 1) -> List[str]:
+    MAX_FRAMES = 60
+
+    def extract_frames(self, video_path: str, fps: float = 1.0) -> List[str]:
         """
         Extracts frames from a video file at a specific frame rate.
+        Applies an adaptive cap: if the requested fps would produce more than
+        MAX_FRAMES frames, the rate is reduced so the total stays at MAX_FRAMES.
         Returns a list of paths to the extracted frames.
         """
         if not os.path.exists(video_path):
@@ -22,8 +26,15 @@ class VideoProcessor:
             raise ValueError(f"Unable to open video file: {video_path}")
 
         video_fps = cap.get(cv2.CAP_PROP_FPS)
-        sample_rate = max(1, fps)
-        hop = max(1, round(video_fps / sample_rate)) if video_fps and video_fps > 0 else 1
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = (total_frames / video_fps) if video_fps and video_fps > 0 else 0
+
+        # Adaptive cap: never extract more than MAX_FRAMES regardless of duration
+        requested_fps = max(0.1, fps)
+        if duration > 0 and (duration * requested_fps) > self.MAX_FRAMES:
+            requested_fps = self.MAX_FRAMES / duration
+
+        hop = max(1, round(video_fps / requested_fps)) if video_fps and video_fps > 0 else 1
         
         frame_paths = []
         count = 0

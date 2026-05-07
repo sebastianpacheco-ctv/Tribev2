@@ -61,7 +61,7 @@ class DiagnosticResult(BaseModel):
 class VideoInferenceRequest(BaseModel):
     request_id: Optional[str] = None
     video_url: Optional[str] = None
-    frame_rate: int = 1
+    frame_rate: float = 1.0
     analysis_depth: str = "standard"
 
 class UploadVideoResponse(BaseModel):

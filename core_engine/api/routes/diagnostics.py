@@ -40,13 +40,14 @@ def _request_root(request_id: str) -> Path:
 def _request_upload_dir(request_id: str) -> Path:
     return _request_root(request_id) / "uploads"
 
-def _request_frames_dir(request_id: str, frame_rate: int = 1) -> Path:
-    return _request_root(request_id) / "frames" / f"fps_{max(1, frame_rate)}"
+def _request_frames_dir(request_id: str, frame_rate: float = 1.0) -> Path:
+    rate_key = f"{max(0.1, frame_rate):.1f}".replace(".", "_")
+    return _request_root(request_id) / "frames" / f"fps_{rate_key}"
 
 def _request_metadata_path(request_id: str) -> Path:
     return _request_root(request_id) / "metadata.json"
 
-def _ensure_request_dirs(request_id: str, frame_rate: int = 1) -> None:
+def _ensure_request_dirs(request_id: str, frame_rate: float = 1.0) -> None:
     _request_upload_dir(request_id).mkdir(parents=True, exist_ok=True)
     _request_frames_dir(request_id, frame_rate).mkdir(parents=True, exist_ok=True)
 
@@ -68,9 +69,9 @@ async def _persist_upload(file: UploadFile, destination: Path) -> None:
             handle.write(chunk)
     await file.close()
 
-def _extract_frames_for_request(video_path: Path, frames_dir: Path, frame_rate: int = 1) -> list[str]:
+def _extract_frames_for_request(video_path: Path, frames_dir: Path, frame_rate: float = 1.0) -> list[str]:
     processor = VideoProcessor(output_dir=str(frames_dir))
-    return processor.extract_frames(str(video_path), fps=max(1, frame_rate))
+    return processor.extract_frames(str(video_path), fps=max(0.1, frame_rate))
 
 def _find_uploaded_video(request_id: str) -> Path:
     upload_dir = _request_upload_dir(request_id)
@@ -483,7 +484,7 @@ async def analyze_creative(request: VideoInferenceRequest):
         )
 
     request_id = request.request_id or str(uuid.uuid4())
-    frame_rate = max(1, request.frame_rate)
+    frame_rate = max(0.1, float(request.frame_rate))
 
     if request.request_id:
         video_path = _find_uploaded_video(request_id)
