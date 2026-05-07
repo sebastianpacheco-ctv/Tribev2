@@ -1182,42 +1182,44 @@ export default function DashboardPage() {
           </nav>
 
           <div className="mt-auto">
-            <div className="glass-card p-4 bg-white/[0.03] border-white/10 space-y-3">
+            <div className="glass-card p-5 bg-white/[0.03] border-white/10 space-y-4">
               <div className="flex justify-between items-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Engine Status</p>
-                <div className="flex items-center gap-1.5">
-                  <div className={`h-1.5 w-1.5 rounded-full ${diagnosticResult ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-                  <span className="text-[10px] font-bold text-gray-400">
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Engine Status</p>
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${diagnosticResult ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'}`} />
+                  <span className="text-xs font-bold text-gray-300">
                     {diagnosticResult ? 'Ready' : 'Idle'}
                   </span>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-gray-500">Frames analyzed</span>
-                  <span className="text-[10px] font-bold text-white font-mono">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] text-gray-500 mb-1">Frames analyzed</p>
+                  <p className="text-2xl font-bold text-white font-mono">
                     {diagnosticResult?.frames_analyzed ?? '—'}
-                  </span>
+                  </p>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-gray-500">Confidence</span>
-                  <span className="text-[10px] font-bold text-white font-mono">
-                    {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
-                  </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Confidence</p>
+                    <p className="text-lg font-bold text-white font-mono">
+                      {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 mb-1">Decision</p>
+                    <p className={`text-lg font-bold font-mono ${
+                      diagnosticResult?.final_decision.approved ? 'text-emerald-400' : diagnosticResult ? 'text-amber-400' : 'text-gray-600'
+                    }`}>
+                      {diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions') : '—'}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-gray-500">Dominant region</span>
-                  <span className="text-[10px] font-bold text-seedtag-coral font-mono truncate max-w-[100px] text-right">
+                <div>
+                  <p className="text-[10px] text-gray-500 mb-1">Dominant region</p>
+                  <p className="text-sm font-bold text-seedtag-coral">
                     {diagnosticResult ? getRegionLabel(getPrimaryRegion(diagnosticResult.region_activations)) : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-gray-500">Decision</span>
-                  <span className={`text-[10px] font-bold font-mono ${
-                    diagnosticResult?.final_decision.approved ? 'text-emerald-400' : diagnosticResult ? 'text-amber-400' : 'text-gray-600'
-                  }`}>
-                    {diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions') : '—'}
-                  </span>
+                  </p>
                 </div>
               </div>
             </div>
