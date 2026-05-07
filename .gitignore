@@ -9,3 +9,8 @@ __pycache__/
 .env
 external_repos/
 *.pdf
+*.mp4
+*.mov
+*.avi
+Videos examples/
+*.code-workspace
