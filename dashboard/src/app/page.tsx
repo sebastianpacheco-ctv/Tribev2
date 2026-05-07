@@ -1185,46 +1185,54 @@ export default function DashboardPage() {
           </nav>
 
           <div className="mt-auto">
-            <div className="glass-card p-5 bg-white/[0.03] border-white/10 space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Engine Status</p>
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${diagnosticResult ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'}`} />
-                  <span className="text-xs font-bold text-gray-300">
-                    {diagnosticResult ? 'Ready' : 'Idle'}
+            <div className="glass-card p-4 bg-white/[0.03] border-white/10 space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Engine Status</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-1.5 w-1.5 rounded-full ${diagnosticResult ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-gray-600'}`} />
+                  <span className="text-[10px] font-bold text-gray-300">{diagnosticResult ? 'Ready' : 'Idle'}</span>
+                </div>
+              </div>
+
+              {/* Metrics grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/5 px-3 py-2">
+                  <p className="text-[9px] text-gray-500 mb-0.5">Frames</p>
+                  <p className="text-base font-bold text-white leading-none">{diagnosticResult?.frames_analyzed ?? '—'}</p>
+                </div>
+                <div className="rounded-lg bg-white/5 px-3 py-2">
+                  <p className="text-[9px] text-gray-500 mb-0.5">Confidence</p>
+                  <p className="text-base font-bold text-white leading-none">
+                    {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Decision badge */}
+              {diagnosticResult && (
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                  diagnosticResult.final_decision.approved
+                    ? 'bg-emerald-400/10 border border-emerald-400/20'
+                    : 'bg-amber-400/10 border border-amber-400/20'
+                }`}>
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Decision</span>
+                  <span className={`text-xs font-bold ${
+                    diagnosticResult.final_decision.approved ? 'text-emerald-400' : 'text-amber-400'
+                  }`}>
+                    {diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions'}
                   </span>
                 </div>
+              )}
+
+              {/* Dominant region */}
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-gray-500">Dominant region</span>
+                <span className="text-[10px] font-bold text-seedtag-coral truncate ml-2">
+                  {diagnosticResult ? getRegionLabel(getPrimaryRegion(diagnosticResult.region_activations)) : '—'}
+                </span>
               </div>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-[10px] text-gray-500 mb-1">Frames analyzed</p>
-                  <p className="text-2xl font-bold text-white">
-                    {diagnosticResult?.frames_analyzed ?? '—'}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[10px] text-gray-500 mb-1">Confidence</p>
-                    <p className="text-lg font-bold text-white">
-                      {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500 mb-1">Decision</p>
-                    <p className={`text-lg font-bold font-mono ${
-                      diagnosticResult?.final_decision.approved ? 'text-emerald-400' : diagnosticResult ? 'text-amber-400' : 'text-gray-600'
-                    }`}>
-                      {diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions') : '—'}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-500 mb-1">Dominant region</p>
-                  <p className="text-sm font-bold text-seedtag-coral">
-                    {diagnosticResult ? getRegionLabel(getPrimaryRegion(diagnosticResult.region_activations)) : '—'}
-                  </p>
-                </div>
-              </div>
+
               {diagnosticResult && (
                 <button
                   type="button"
