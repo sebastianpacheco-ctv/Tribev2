@@ -1317,17 +1317,7 @@ export default function DashboardPage() {
               />
             </motion.div>
 
-            {/* Attention Timeline Chart — directly below video */}
-            {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
-              <AttentionChart
-                frames={diagnosticResult.frame_insights}
-                markers={timelineMarkers}
-                activeMarkerIndex={activeMarkerIndex}
-                onMarkerClick={handleMarkerClick}
-              />
-            )}
-
-            {/* Marker info panel — appears below chart when a marker is active */}
+            {/* Marker info panel — appears below video when a marker is active */}
             <AnimatePresence>
               {activeMarkerIndex !== null && (() => {
                 const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
