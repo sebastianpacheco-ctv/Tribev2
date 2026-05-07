@@ -55,26 +55,36 @@
     - Backend: `frame_rate: float` en schema, `_request_frames_dir` con path float-safe, clip `max(0.1, ...)`.
     - El adaptive cap de 6.6 aplica sobre el fps elegido.
 
-### Pendientes
-- [ ] **Step 6.1: BrainViewer Anatómico**
-    - Reemplazar esfera de partículas por forma matemática de cerebro.
-    - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
-    - Las activaciones por región ya llegan al componente.
+### Pendientes (orden recomendado)
+
+#### Bloque 1 — Identidad y UX (bajo riesgo, alto impacto visible)
+- [ ] **Step 6.10: Renombrar a NeuralSeed**
+    - Cambiar "TRIBE v2" → "NeuralSeed" en título, sidebar, metadata y PDF export.
+- [ ] **Step 6.11: Analysis Depth integrado en el flujo de upload**
+    - Mostrar selector Quick/Standard/Deep inline debajo del video al seleccionar un archivo.
+    - Reemplaza el selector del sidebar — el usuario elige la profundidad en contexto.
+- [ ] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
+    - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
+
+#### Bloque 2 — Features de valor (completan el producto)
 - [ ] **Step 6.2: Markers en PDF**
     - Incluir decisiones OK/Flag y notas del Human Gate en el PDF exportado.
     - Agregar sección "Frame Review" en `createDiagnosticPdf` en `page.tsx`.
-- [ ] **Step 6.3: Auth en la API**
-    - Middleware FastAPI con API key en header.
-    - Necesario antes de exponer en cualquier red.
-- [ ] **Step 6.4: Next.js 15/16 migration**
-    - 5 vulnerabilidades restantes en npm audit.
-    - Riesgo bajo en localhost. Migración mayor, scope separado.
-- [ ] **Step 6.8: Acceso rápido "New Creative" desde sidebar**
-    - Mostrar botón "New Creative" en el sidebar cuando hay un resultado activo.
-    - Evita que el usuario tenga que scrollear hasta el player para resetear.
 - [ ] **Step 6.9: Historial de diagnósticos (vista de carpetas)**
     - Backend: persistir `DiagnosticResult` en JSON/SQLite por `request_id` al finalizar análisis.
     - Nuevo endpoint `GET /diagnostics` que lista los resultados guardados.
     - Vista en dashboard: lista con fecha, nombre de archivo, attention score, decisión final.
     - Click en resultado → carga el diagnóstico sin re-analizar.
-    - Filtros básicos: por fecha, score, decisión (Approved/Revisions).
+
+#### Bloque 3 — Visual (impacto estético, complejidad alta)
+- [ ] **Step 6.1: BrainViewer Anatómico**
+    - Reemplazar esfera de partículas por forma matemática de cerebro.
+    - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
+
+#### Bloque 4 — Seguridad e infraestructura (antes de cualquier deploy)
+- [ ] **Step 6.3: Auth en la API**
+    - Middleware FastAPI con API key en header.
+    - Necesario antes de exponer en cualquier red.
+- [ ] **Step 6.4: Next.js 15/16 migration**
+    - 5 vulnerabilidades restantes en npm audit.
+    - Migración mayor — hacer en rama separada.

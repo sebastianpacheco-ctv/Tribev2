@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TRIBE v2 | Predictive Creative Diagnostics",
-  description: "Next-generation brain-inspired predictive foundation model for creative optimization.",
+  title: "NeuralSeed | Predictive Creative Diagnostics",
+  description: "Seedtag's brain-inspired predictive engine for CTV creative optimization.",
 };
 
 export default function RootLayout({

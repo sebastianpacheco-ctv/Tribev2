@@ -176,7 +176,7 @@ function buildNeuralLog(result: DiagnosticResult | null) {
   if (!result) {
     return [
       'Upload a video to begin live cortical analysis.',
-      'TRIBE v2 will extract frames and score creative resonance.',
+      'NeuralSeed will extract frames and score creative resonance.',
       'Gemini-generated hybrid flags will appear here after inference.',
       'Export becomes available once the final diagnostic JSON is ready.',
     ]
@@ -398,7 +398,7 @@ async function createDiagnosticPdf(
     doc.text(doc.splitTextToSize(note, width - 8), x + 4, y + 23)
   }
 
-  addHeader('TRIBE v2 Creative Diagnostics', 'Predictive human response and CTV QA report')
+  addHeader('NeuralSeed Creative Diagnostics', 'Predictive human response and CTV QA report')
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(22)
@@ -578,7 +578,7 @@ async function createDiagnosticPdf(
     cursorY += rowHeight
   })
 
-  doc.save(`tribe-v2-report-${result.request_id}.pdf`)
+  doc.save(`neuralseed-report-${result.request_id}.pdf`)
 }
 
 const SidebarItem = ({
@@ -1149,7 +1149,7 @@ export default function DashboardPage() {
               <Brain size={24} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold leading-none">TRIBE <span className="text-seedtag-coral">v2</span></h1>
+              <h1 className="text-xl font-bold leading-none">Neural<span className="text-seedtag-coral">Seed</span></h1>
               <span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-1 block">Predictive Foundation</span>
             </div>
           </div>
@@ -1222,6 +1222,15 @@ export default function DashboardPage() {
                   </p>
                 </div>
               </div>
+              {diagnosticResult && (
+                <button
+                  type="button"
+                  onClick={resetSession}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-bold text-gray-300 transition-all hover:bg-white/10 hover:text-white"
+                >
+                  + New Creative
+                </button>
+              )}
             </div>
           </div>
         </motion.aside>
@@ -1269,7 +1278,7 @@ export default function DashboardPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="w-[70%] mx-auto"
+              className="w-[70%] mx-auto bg-black"
             >
               <VideoCortex
                 onTimeUpdate={handleTimeUpdate}
@@ -1286,6 +1295,8 @@ export default function DashboardPage() {
                 canAnalyze={Boolean(uploadResult?.request_id || selectedFile)}
                 isDone={Boolean(diagnosticResult)}
                 onReset={resetSession}
+                analysisDepth={analysisDepth}
+                onDepthChange={(d) => setAnalysisProfile(d, d === 'quick' ? 1 : d === 'deep' ? 3 : 2)}
                 markers={timelineMarkers}
                 activeMarkerIndex={activeMarkerIndex}
                 onMarkerClick={handleMarkerClick}

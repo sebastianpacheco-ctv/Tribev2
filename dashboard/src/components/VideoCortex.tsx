@@ -26,6 +26,8 @@ interface VideoCortexProps {
   hideControls?: boolean;
   isDone?: boolean;
   onReset?: () => void;
+  analysisDepth?: 'quick' | 'standard' | 'deep';
+  onDepthChange?: (depth: 'quick' | 'standard' | 'deep') => void;
   markers?: TimelineMarker[];
   activeMarkerIndex?: number | null;
   onMarkerClick?: (frameIndex: number, timestampSeconds: number) => void;
@@ -94,6 +96,8 @@ export default function VideoCortex({
   hideControls = false,
   isDone = false,
   onReset,
+  analysisDepth = 'standard',
+  onDepthChange,
   markers = [],
   activeMarkerIndex = null,
   onMarkerClick,
@@ -388,7 +392,26 @@ export default function VideoCortex({
           )}
 
           {!hideControls && selectedFileName && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              {!isUploading && !isAnalyzing && !isDone && onDepthChange && (
+                <div className="flex rounded-lg border border-white/10 overflow-hidden">
+                  {(['quick', 'standard', 'deep'] as const).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => onDepthChange(d)}
+                      className={`px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${
+                        analysisDepth === d
+                          ? 'bg-seedtag-coral text-white'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {(isUploading || isAnalyzing) ? (
                 <button
                   disabled
