@@ -1326,7 +1326,7 @@ export default function DashboardPage() {
               const currentIdx = m ? frameMarkers.findIndex((fm) => fm.frameIndex === m.frameIndex) : -1
 
               return (
-                <div className={`w-full rounded-xl border px-4 py-3 flex items-center gap-4 transition-colors duration-200 ${
+                <div className={`w-full rounded-xl border px-5 py-4 flex items-center gap-5 transition-colors duration-200 ${
                   m
                     ? m.type === 'low-attention'
                       ? 'border-red-400/50 bg-[#1a0505]'
@@ -1336,7 +1336,7 @@ export default function DashboardPage() {
                   {m ? (
                     <>
                       {/* Badge */}
-                      <div className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${
+                      <div className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
                         m.type === 'low-attention' ? 'bg-red-500/40 text-red-200' : 'bg-amber-400/40 text-amber-200'
                       }`}>
                         {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
@@ -1344,44 +1344,44 @@ export default function DashboardPage() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-3 mb-0.5">
-                          <span className="text-xs font-bold text-white">{m.timestampSeconds}s</span>
-                          <span className="text-[10px] text-gray-400">
+                        <div className="flex items-baseline gap-3 mb-1">
+                          <span className="text-sm font-bold text-white">{m.timestampSeconds}s</span>
+                          <span className="text-xs text-gray-400">
                             Attention: <strong className="text-white">{m.attentionScore.toFixed(0)}</strong>
                             &nbsp;·&nbsp;Load: <strong className="text-white">{(m.sensoryLoad * 100).toFixed(0)}%</strong>
                             &nbsp;·&nbsp;{currentIdx + 1} of {frameMarkers.length}
                           </span>
                         </div>
-                        <p className="text-[11px] text-gray-300 leading-snug truncate">{m.recommendation}</p>
+                        <p className="text-sm text-gray-300 leading-snug truncate">{m.recommendation}</p>
                       </div>
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 shrink-0">
                         <button type="button" onClick={() => navigateMarker('prev')} disabled={currentIdx <= 0}
-                          className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30">
-                          <ChevronLeft size={14} />
+                          className="flex h-8 w-8 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30">
+                          <ChevronLeft size={15} />
                         </button>
                         <button type="button" onClick={() => navigateMarker('next')} disabled={currentIdx >= frameMarkers.length - 1}
-                          className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30">
-                          <ChevronRight size={14} />
+                          className="flex h-8 w-8 items-center justify-center rounded border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 disabled:opacity-30">
+                          <ChevronRight size={15} />
                         </button>
                         <div className="w-px h-5 bg-white/10" />
                         <button type="button" onClick={() => setMarkerDecision(m.frameIndex, 'ok')}
-                          className={`flex h-7 w-7 items-center justify-center rounded border transition-all ${
+                          className={`flex h-8 w-8 items-center justify-center rounded border transition-all ${
                             decision === 'ok' ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100' : 'border-white/10 bg-white/5 text-gray-400 hover:border-emerald-400/30 hover:text-emerald-300'
                           }`}>
-                          <Check size={14} />
+                          <Check size={15} />
                         </button>
                         <button type="button" onClick={() => setMarkerDecision(m.frameIndex, 'flagged')}
-                          className={`flex h-7 w-7 items-center justify-center rounded border transition-all ${
+                          className={`flex h-8 w-8 items-center justify-center rounded border transition-all ${
                             decision === 'flagged' ? 'border-red-400/40 bg-red-400/20 text-red-100' : 'border-white/10 bg-white/5 text-gray-400 hover:border-red-400/30 hover:text-red-300'
                           }`}>
-                          <X size={14} />
+                          <X size={15} />
                         </button>
                       </div>
                     </>
                   ) : (
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-sm text-gray-500">
                       Click a marker on the timeline to inspect · {frameMarkers.length} marker{frameMarkers.length !== 1 ? 's' : ''} detected
                     </p>
                   )}
