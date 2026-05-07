@@ -1646,10 +1646,10 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => setGateExpanded(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-200 transition-all hover:bg-amber-400/20"
+                    className="flex items-center gap-2 rounded-lg bg-amber-400 px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-black shadow-lg shadow-amber-400/30 transition-all hover:brightness-110 active:scale-95"
                   >
-                    <Maximize2 size={11} />
-                    Review
+                    <Maximize2 size={13} />
+                    Review {frameMarkers.length} markers
                   </button>
                 )}
               </div>
@@ -2131,7 +2131,7 @@ export default function DashboardPage() {
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="glass-panel flex w-full max-w-6xl overflow-hidden rounded-2xl border-white/10"
-              style={{ height: 'min(88vh, 680px)' }}
+              style={{ height: 'min(96vh, 960px)' }}
             >
               {/* Left: video */}
               <div className="flex flex-col flex-1 min-w-0 p-5 gap-4">
