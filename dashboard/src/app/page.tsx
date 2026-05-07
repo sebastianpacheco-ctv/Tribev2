@@ -1152,7 +1152,7 @@ export default function DashboardPage() {
               <Brain size={24} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold leading-none">Neural<span className="text-seedtag-coral">Seed</span></h1>
+              <h1 className="text-xl font-serif italic leading-none">Neural<span className="text-seedtag-coral">Seed</span></h1>
               <span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-1 block">Predictive Foundation</span>
             </div>
           </div>
@@ -1198,14 +1198,14 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div>
                   <p className="text-[10px] text-gray-500 mb-1">Frames analyzed</p>
-                  <p className="text-2xl font-bold text-white font-mono">
+                  <p className="text-2xl font-bold text-white">
                     {diagnosticResult?.frames_analyzed ?? '—'}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-[10px] text-gray-500 mb-1">Confidence</p>
-                    <p className="text-lg font-bold text-white font-mono">
+                    <p className="text-lg font-bold text-white">
                       {diagnosticResult ? `${(diagnosticResult.prediction_confidence * 100).toFixed(0)}%` : '—'}
                     </p>
                   </div>
@@ -1276,7 +1276,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          <div className="flex-1 flex flex-col justify-center px-4 pb-2 pt-2 gap-3">
+          <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar px-4 pb-6 pt-2 gap-3">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1325,13 +1325,13 @@ export default function DashboardPage() {
                     transition={{ duration: 0.18 }}
                     className={`w-full rounded-xl border px-4 py-3 flex items-start gap-4 ${
                       m.type === 'low-attention'
-                        ? 'border-red-400/25 bg-red-500/10'
-                        : 'border-amber-400/25 bg-amber-400/10'
+                        ? 'border-red-400/50 bg-red-500/25'
+                        : 'border-amber-400/50 bg-amber-400/25'
                     }`}
                   >
                     {/* Badge */}
                     <div className={`shrink-0 mt-0.5 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${
-                      m.type === 'low-attention' ? 'bg-red-500/20 text-red-300' : 'bg-amber-400/20 text-amber-300'
+                      m.type === 'low-attention' ? 'bg-red-500/40 text-red-200' : 'bg-amber-400/40 text-amber-200'
                     }`}>
                       {m.type === 'low-attention' ? 'Low Attention' : 'High Load'}
                     </div>
