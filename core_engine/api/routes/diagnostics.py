@@ -20,6 +20,7 @@ from core_engine.api.schemas.diagnostics import (
     HistorySummary,
     HybridFlags,
     UploadVideoResponse,
+    UrlPreviewRequest,
     VideoInferenceRequest,
 )
 from core_engine.models.inference import TribeInferenceEngine
@@ -671,6 +672,94 @@ async def analyze_creative(background_tasks: BackgroundTasks, request: VideoInfe
         result.model_dump_json(indent=2)
     )
     background_tasks.add_task(_delete_frames_dir, request_id)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# URL Preview (6.16) — screenshot a URL with Playwright, then run image analysis
+# ---------------------------------------------------------------------------
+
+@router.post("/url-preview", response_model=DiagnosticResult)
+async def analyze_url_preview(body: UrlPreviewRequest):
+    url = body.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="url must start with http:// or https://")
+
+    request_id = str(uuid.uuid4())
+    upload_dir = _request_upload_dir(request_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = upload_dir / "preview_screenshot.png"
+
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1280, "height": 720})
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.screenshot(path=str(screenshot_path), full_page=False)
+            await browser.close()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Screenshot failed: {exc}") from exc
+
+    stimuli = _load_image_as_stimuli(screenshot_path)
+    frame_paths = [str(screenshot_path)]
+
+    inference_result = await asyncio.to_thread(engine.predict, stimuli)
+    frame_insights_data = await asyncio.to_thread(engine.predict_frame_sequence, stimuli, 1.0)
+
+    try:
+        gemini_explanation_str = await insight_gen.generate_explanation(inference_result)
+        gemini_data = json.loads(gemini_explanation_str)
+    except Exception:
+        gemini_data = _build_deterministic_review(inference_result)
+
+    if "hybrid_flags" not in gemini_data or "final_decision" not in gemini_data:
+        gemini_data = _build_deterministic_review(inference_result)
+
+    hybrid_dict = gemini_data.get("hybrid_flags", {})
+    decision_dict = gemini_data.get("final_decision", {})
+    automated_flags = _build_automated_flags(stimuli, inference_result, frame_paths)
+    hybrid_flags = HybridFlags(
+        pacing_warnings=hybrid_dict.get("pacing_warnings", []),
+        transition_warnings=hybrid_dict.get("transition_warnings", []),
+        brand_voice_score=hybrid_dict.get("brand_voice_score", 0.0),
+    )
+    frame_insights = [FrameInsight(**fi) for fi in frame_insights_data]
+    actionable_steps = _build_actionable_steps(automated_flags, hybrid_flags, inference_result, frame_insights_data)
+
+    analyzed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    safe_url_name = url.replace("https://", "").replace("http://", "").replace("/", "_")[:60]
+    metadata = {
+        "request_id": request_id,
+        "filename": f"url:{safe_url_name}",
+        "frame_rate": 1.0,
+        "analysis_depth": body.analysis_depth,
+        "format_type": body.format_type,
+        "frames_extracted": 1,
+        "analyzed_at": analyzed_at,
+    }
+    _request_metadata_path(request_id).write_text(json.dumps(metadata, indent=2))
+
+    result = DiagnosticResult(
+        request_id=request_id,
+        timestamp=analyzed_at,
+        ai_automated=automated_flags,
+        hybrid_flags=hybrid_flags,
+        attention_score=inference_result.get("attention_score", 0),
+        neural_resonance=inference_result.get("emotional_impact", 0),
+        region_activations=inference_result.get("activations", {}),
+        prediction_confidence=inference_result.get("prediction_confidence", 0.0),
+        sensory_load=inference_result.get("sensory_load", 0.0),
+        frames_analyzed=inference_result.get("frames_analyzed", 0),
+        frame_insights=frame_insights,
+        actionable_steps=actionable_steps,
+        final_decision=FinalDecision(
+            strategy_category=decision_dict.get("strategy_category", "Unknown"),
+            approved=decision_dict.get("approved", False),
+            revisions_required=decision_dict.get("revisions_required", True),
+        ),
+    )
+    (_request_root(request_id) / "result.json").write_text(result.model_dump_json(indent=2))
     return result
 
 

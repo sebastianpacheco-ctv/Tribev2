@@ -80,3 +80,8 @@ class HistorySummary(BaseModel):
     approved: bool
     strategy_category: str
     frames_analyzed: int
+
+class UrlPreviewRequest(BaseModel):
+    url: str
+    format_type: str = "bespoke"
+    analysis_depth: str = "standard"
