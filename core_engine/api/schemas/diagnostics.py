@@ -34,6 +34,7 @@ class FrameInsight(BaseModel):
     sensory_load: float
     cognitive_response: str
     recommendation: str
+    attention_map: Optional[List[List[float]]] = None
 
 class DiagnosticResult(BaseModel):
     request_id: str
@@ -70,3 +71,12 @@ class UploadVideoResponse(BaseModel):
     filename: str
     status: str = "uploaded"
     message: str = "Video saved and queued for frame extraction."
+
+class HistorySummary(BaseModel):
+    request_id: str
+    filename: str
+    analyzed_at: str
+    attention_score: float
+    approved: bool
+    strategy_category: str
+    frames_analyzed: int

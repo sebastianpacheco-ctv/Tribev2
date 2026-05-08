@@ -1,9 +1,9 @@
 # TRIBE v2 - Handoff / Recovery Point
 
-**Fecha:** 6 de mayo de 2026
-**Commit:** `131aa78`
+**Fecha:** 7 de mayo de 2026
+**Commit:** `36428d6` (working tree con cambios no commiteados)
 **Branch:** `main`
-**Estado:** Working tree limpio. Human Gate con timeline markers implementado. QA checks reales. Engine Status real en sidebar.
+**Estado:** FlipCards en todos los campos del dashboard (QA checks, Hybrid Review, Neural Signals, Markers, StatCards). Guía de usuario descargable en PDF desde sidebar. Markers del Human Gate exportados al PDF de diagnóstico.
 
 ---
 
@@ -109,8 +109,10 @@ NEXT_PUBLIC_TRIBE_API_BASE_URL=http://127.0.0.1:8000/api/v1/diagnostics
 ## Pendiente
 
 ### Features
-1. **BrainViewer anatómico** — partículas en forma de cerebro, zonas activas en posición anatómica correcta (frontal adelante, visual atrás, temporal a los lados). Hoy es una esfera genérica. La activación ya llega al componente — solo falta la forma. Opción A: fórmula matemática sin assets. Opción B: modelo `.glb`.
-2. **Markers en PDF** — las decisiones OK/Flag y notas del Human Gate no se exportan al PDF. Agregar sección "Frame Review" en `createDiagnosticPdf` en `page.tsx`.
+1. **Historial (6.9)** — persistencia JSON/SQLite en backend, `GET /diagnostics` para listar, vista lista en dashboard. **En progreso.**
+2. **BrainViewer anatómico (6.1)** — esfera → forma de cerebro, zonas en posición real. Visual puro.
+3. ~~**Markers en PDF**~~ — ✅ Completado 2026-05-07.
+4. ~~**FlipCards + User Guide**~~ — ✅ Completado 2026-05-07. FlipCards en todos los campos. PDF guía descargable desde sidebar.
 
 ### Mantenimiento
 3. **Auth en la API** — endpoints abiertos sin token. Añadir middleware FastAPI con API key en header. Necesario antes de exponer en red.

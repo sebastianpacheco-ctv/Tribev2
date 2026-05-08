@@ -1,11 +1,12 @@
 'use client'
 
-import { ReactNode, useEffect, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Activity,
   Brain,
   BarChart3,
+  Clock,
   Settings,
   Download,
   Zap,
@@ -24,17 +25,25 @@ import {
   ChevronRight,
   Maximize2,
   StickyNote,
+  Film,
+  Server,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import BrainViewer from '@/components/BrainViewer'
+import BrainViewer, { REGIONS as BRAIN_REGIONS, type RegionDetail } from '@/components/BrainViewer'
 import VideoCortex, { type TimelineMarker } from '@/components/VideoCortex'
 import AttentionChart from '@/components/AttentionChart'
 
 const DIAGNOSTICS_API_BASE =
   process.env.NEXT_PUBLIC_TRIBE_API_BASE_URL ?? 'http://localhost:8000/api/v1/diagnostics'
 
-type BrainRegionKey = 'frontal' | 'temporal' | 'visual' | 'all'
-type DashboardSection = 'diagnostics' | 'insights' | 'registry' | 'config'
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? ''
+
+function apiHeaders(extra?: Record<string, string>): Record<string, string> {
+  return API_KEY ? { 'X-API-Key': API_KEY, ...extra } : { ...extra }
+}
+
+type BrainRegionKey = 'frontal' | 'temporal' | 'visual' | 'emotional' | 'all'
+type DashboardSection = 'diagnostics' | 'insights' | 'config' | 'history' | 'lifecycle'
 
 interface UploadResponse {
   request_id: string
@@ -90,12 +99,23 @@ interface FrameInsight {
   sensory_load: number
   cognitive_response: string
   recommendation: string
+  attention_map?: number[][] | null
 }
 
 type HybridReviewKey = 'brandVoice' | 'pacing' | 'transitions'
 type ReviewDecision = 'confirmed' | 'rejected'
-type AnalysisDepth = 'quick' | 'standard' | 'deep'
+type AnalysisDepth = 'quick' | 'standard' | 'deep' | 'ultra'
 type MarkerDecision = 'ok' | 'flagged'
+
+interface HistorySummary {
+  request_id: string
+  filename: string
+  analyzed_at: string
+  attention_score: number
+  approved: boolean
+  strategy_category: string
+  frames_analyzed: number
+}
 
 interface FrameMarker {
   frameIndex: number
@@ -125,11 +145,9 @@ const RESULT_EXPLAINERS = {
   neural:
     'Predicted cortical-style region activations derived from frame-level visual features.',
   brainMap:
-    'Schematic cortical map showing the currently active predicted region. This approximates the model output visually; it is not a medical brain scan.',
+    'Predicted brain region activations based on visual features. Prefrontal = attention, Visual = contrast/detail, Temporal = motion/audio, Amygdala = emotional engagement.',
   frameResponse:
     'Frame-by-frame predicted human response with timestamp, attention level and recommended edit action.',
-  registry:
-    'Operational record for the current creative: upload state, analysis state, request ID and sample actions.',
   config:
     'Runtime settings for local endpoints and frame sampling depth.',
 }
@@ -173,6 +191,65 @@ function getPrimaryRegion(activations?: Record<string, number>): BrainRegionKey 
   return ordered.sort((left, right) => right.value - left.value)[0]?.key ?? 'all'
 }
 
+const REGION_MEANINGS: Record<string, { driver: string; high: string; low: string }> = {
+  'Prefrontal Cortex (Attention)': {
+    driver: 'attention & message clarity',
+    high: 'The message hierarchy is strong — viewers\' working memory locks onto the key communication.',
+    low: 'Weak message hierarchy — the main communication is not cutting through.',
+  },
+  'Visual Cortex (V1-V4)': {
+    driver: 'visual impact',
+    high: 'Composition, contrast and visual rhythm are doing heavy lifting for recall.',
+    low: 'Visual composition is underperforming — contrast, layout or motion needs rework.',
+  },
+  'Auditory Cortex (Temporal)': {
+    driver: 'audio & copy resonance',
+    high: 'Copy, voiceover or music is landing well and reinforcing the message.',
+    low: 'Audio or on-screen text is not adding signal — consider stronger copy or sound design.',
+  },
+  'Amygdala (Emotional)': {
+    driver: 'emotional response',
+    high: 'The creative generates a genuine emotional response, boosting long-term memorability.',
+    low: 'Emotional engagement is low — the creative feels functional but not memorable.',
+  },
+}
+
+function buildBrainConclusion(result: DiagnosticResult | null): { headline: string; body: string; action: string } | null {
+  if (!result) return null
+
+  const entries = Object.entries(result.region_activations).sort((a, b) => b[1] - a[1])
+  if (entries.length === 0) return null
+
+  const [dominantKey, dominantVal] = entries[0]
+  const weakEntries = entries.filter(([, v]) => v < 0.4)
+  const approved = result.final_decision.approved
+
+  const dominant = REGION_MEANINGS[dominantKey]
+  if (!dominant) return null
+
+  // Overall verdict headline
+  const headline = approved
+    ? `Strong creative — leads with ${dominant.driver}`
+    : `Needs work — ${dominant.driver} is the only clear strength`
+
+  // Synthesized body: what the pattern means holistically
+  const avgActivation = entries.reduce((s, [, v]) => s + v, 0) / entries.length
+  const body = avgActivation >= 0.6
+    ? 'This creative fires across all cognitive channels — high attention, emotional resonance, and visual impact working together.'
+    : avgActivation >= 0.4
+      ? `The creative has a clear lead in ${dominant.driver}, but other regions are underutilized — the message lacks full-spectrum impact.`
+      : 'Activation is low across most brain regions. The creative is not generating consistent cognitive engagement.'
+
+  // Single actionable recommendation
+  const worstKey = weakEntries[0]?.[0]
+  const worst = worstKey ? REGION_MEANINGS[worstKey] : null
+  const action = worst
+    ? `Priority fix: ${worst.low}`
+    : `Maintain current strength in ${dominant.driver} and test variations to further boost recall.`
+
+  return { headline, body, action }
+}
+
 function buildNeuralLog(result: DiagnosticResult | null) {
   if (!result) {
     return [
@@ -204,14 +281,144 @@ function buildNeuralLog(result: DiagnosticResult | null) {
   return lines
 }
 
+interface RegionRec {
+  working: { label: string; reason: string }[]
+  failing: { label: string; reason: string }[]
+  action: { label: string; tip: string } | null
+}
+
+function buildRegionRecommendations(result: DiagnosticResult | null): RegionRec | null {
+  if (!result) return null
+  const ra = result.region_activations
+
+  const regions = [
+    {
+      key: 'Prefrontal Cortex (Attention)',
+      label: 'Prefrontal',
+      color: '#E85D64',
+      workReason: 'Strong attention lock — message clarity is high.',
+      failReason: 'Attention is weak — viewers may drift before the CTA.',
+      fix: 'Add a clear focal point or product cue in the first 3 seconds.',
+    },
+    {
+      key: 'Visual Cortex (V1-V4)',
+      label: 'Visual',
+      color: '#3B82F6',
+      workReason: 'Visual impact is strong — composition and contrast are working.',
+      failReason: 'Low visual salience — the frame lacks contrast or a clear subject.',
+      fix: 'Improve contrast, use bolder colors, or simplify the composition.',
+    },
+    {
+      key: 'Auditory Cortex (Temporal)',
+      label: 'Temporal',
+      color: '#F59E0B',
+      workReason: 'Audio and language engagement is strong.',
+      failReason: 'Audio/language signal is weak — voiceover or music isn\'t landing.',
+      fix: 'Strengthen the voiceover, add music energy, or make on-screen text more prominent.',
+    },
+    {
+      key: 'Amygdala (Emotional)',
+      label: 'Emotional',
+      color: '#8B5CF6',
+      workReason: 'Strong emotional resonance — content is memorable.',
+      failReason: 'Emotional response is low — content feels cold or detached.',
+      fix: 'Add a human moment, a relatable scene, or a stronger emotional payoff at the end.',
+    },
+  ]
+
+  const working: RegionRec['working'] = []
+  const failing: RegionRec['failing'] = []
+  let weakest: typeof regions[0] | null = null
+  let weakestVal = 1
+
+  for (const r of regions) {
+    const val = ra[r.key] ?? 0
+    if (val >= 0.65) working.push({ label: r.label, reason: r.workReason })
+    else if (val < 0.40) failing.push({ label: r.label, reason: r.failReason })
+    if (val < weakestVal) { weakestVal = val; weakest = r }
+  }
+
+  const action = weakest && weakestVal < 0.60
+    ? { label: weakest.label, tip: weakest.fix }
+    : null
+
+  return { working, failing, action }
+}
+
 function getFrameBudgetLabel(depth: AnalysisDepth, frameRate: number) {
-  if (depth === 'quick') {
-    return `${frameRate} fps quick pass`
-  }
-  if (depth === 'deep') {
-    return `${frameRate} fps deep pass`
-  }
+  if (depth === 'quick') return `${frameRate} fps quick pass`
+  if (depth === 'deep') return `${frameRate} fps deep pass`
+  if (depth === 'ultra') return `${frameRate} fps ultra-high pass`
   return `${frameRate} fps standard pass`
+}
+
+function buildRegionDetails(result: DiagnosticResult | null): Record<string, RegionDetail> {
+  if (!result) return {}
+  const ra = result.region_activations
+  const insights = result.frame_insights ?? []
+
+  const regionConfig = [
+    {
+      id: 'frontal',
+      key: 'Prefrontal Cortex (Attention)',
+      highWhy: 'The creative locks attention quickly — strong focal hierarchy and clear visual cues.',
+      lowWhy: 'Attention signal is weak — the opening lacks a clear focal point or compelling hook.',
+      highFix: 'Maintain the current pacing and visual hierarchy through the full duration.',
+      lowFix: 'Add a bold focal element or product cue in the first 3 seconds to anchor attention.',
+    },
+    {
+      id: 'visual',
+      key: 'Visual Cortex (V1-V4)',
+      highWhy: 'Strong visual cortex response — composition, contrast, and color are working well.',
+      lowWhy: 'Visual processing is underperforming — low contrast or cluttered composition.',
+      highFix: 'Keep the visual style consistent. Avoid over-editing.',
+      lowFix: 'Simplify the frame, increase contrast, or introduce a stronger color accent.',
+    },
+    {
+      id: 'temporal',
+      key: 'Auditory Cortex (Temporal)',
+      highWhy: 'Audio and motion engagement is strong — voiceover or music is driving rhythm.',
+      lowWhy: 'Temporal lobe is underactivated — audio or on-screen text isn\'t registering.',
+      highFix: 'The audio rhythm is working. Sync any supers or CTAs to the beat.',
+      lowFix: 'Add voiceover energy, sync cuts to music, or increase on-screen text readability.',
+    },
+    {
+      id: 'emotional',
+      key: 'Amygdala (Emotional)',
+      highWhy: 'Strong emotional resonance — content triggers a genuine feeling response.',
+      lowWhy: 'Low emotional activation — content feels neutral or transactional.',
+      highFix: 'Preserve the emotional arc. Don\'t cut the moment that creates the feeling.',
+      lowFix: 'Add a human face, a relatable scenario, or a stronger emotional payoff at the close.',
+    },
+  ]
+
+  const details: Record<string, import('@/components/BrainViewer').RegionDetail> = {}
+
+  for (const r of regionConfig) {
+    const val = ra[r.key] ?? 0
+    const isHigh = val >= 0.60
+
+    // Find key moments from frame insights for this region
+    const related = insights.filter(f => f.dominant_region === r.key)
+    let timeRef: string | undefined
+    if (related.length > 0) {
+      const strongest = related.reduce((a, b) => a.attention_score > b.attention_score ? a : b)
+      const weakest = related.reduce((a, b) => a.attention_score < b.attention_score ? a : b)
+      if (strongest.timestamp_seconds !== weakest.timestamp_seconds) {
+        timeRef = `Strongest at ${strongest.timestamp_seconds}s, weakest at ${weakest.timestamp_seconds}s.`
+      } else {
+        timeRef = `Key moment at ${strongest.timestamp_seconds}s.`
+      }
+    }
+
+    details[r.id] = {
+      why: isHigh ? r.highWhy : r.lowWhy,
+      fix: isHigh ? r.highFix : r.lowFix,
+      timeRef,
+    }
+  }
+
+  return details
 }
 
 function buildAutomatedChecks(result: DiagnosticResult | null): AutomatedCheckItem[] {
@@ -229,15 +436,33 @@ function buildAutomatedChecks(result: DiagnosticResult | null): AutomatedCheckIt
 
 function getAutomatedCheckExplanation(label: string) {
   const explanations: Record<string, string> = {
-    'Spelling + Grammar': 'Checks whether the creative appears safe from obvious copy quality issues. Full OCR review should be added for production.',
-    'CTA Present': 'Detects whether the video has enough visual evidence for a clear call to action or final conversion cue.',
-    'Logo Visible': 'Estimates whether brand presence is visually salient enough to be remembered.',
-    'Safe Zones': 'Checks whether key elements are likely to remain inside CTV-safe visible areas.',
-    Resolution: 'Confirms the analyzed frames have enough resolution for reliable QA scoring.',
-    'QR Code': 'Estimates whether QR-like detail has enough contrast to be scannable.',
+    'Spelling + Grammar': 'Checks for spelling or grammar errors visible on screen. Text with mistakes damages brand credibility and can be rejected by CTV platforms.',
+    'CTA Present': 'Detects whether the ad includes a visible call to action ("Visit our site", "Call now", etc.). Without a clear CTA, viewers don\'t know what to do after watching.',
+    'Logo Visible': 'Verifies the brand logo is clearly visible at some point in the video. Essential for brand recall in CTV, where the logo must be legible on large screens.',
+    'Safe Zones': 'Checks that key elements (text, logo, CTA) are within the safe margins of the screen. On CTV, edges may be cropped depending on the TV model.',
+    Resolution: 'Confirms the video meets the minimum quality standard for CTV broadcast. Low-resolution videos may be rejected by ad platforms.',
+    'QR Code': 'If the ad includes a QR code, verifies it has enough contrast and clarity to be scanned from a distance with a mobile phone.',
   }
 
   return explanations[label] ?? RESULT_EXPLAINERS.automated
+}
+
+const HYBRID_EXPLAINERS: Record<HybridReviewKey, string> = {
+  brandVoice:
+    'How well the visual tone and messaging match the brand identity. A low score may mean the creative doesn\'t "feel like" the brand even if it\'s technically correct. Review brand guidelines before approving.',
+  pacing:
+    'The editing rhythm and cut speed. For CTV (large screen, lean-back viewing), fast cuts can cause fatigue; slow cuts risk losing attention. Review flagged moments in the Human Gate before approving.',
+  transitions:
+    'Quality and coherence of scene transitions. Abrupt cuts or overused effects lower perceived production quality and can drag down the Resonance score. Flag rough edits for the editor.',
+}
+
+const REGION_EXPLAINERS: Record<string, string> = {
+  'Visual (V1)':
+    'Predicted activation of the visual processing area. High activation means the frame has enough contrast, color and motion to strongly engage the viewer\'s vision system.',
+  'Temporal (Audio)':
+    'Predicted activation of the auditory-processing area. Even without analyzing audio directly, editing rhythm and motion cues stimulate this predicted zone.',
+  'Frontal (Attention)':
+    'Predicted activation of the executive-attention area. High activation means the creative demands active cognitive engagement — the viewer is not passively watching.',
 }
 
 function buildHybridReviewItems(result: DiagnosticResult | null): HybridReviewItem[] {
@@ -297,6 +522,7 @@ function uploadVideoWithProgress(file: File, onProgress: (progress: number) => v
     const request = new XMLHttpRequest()
     request.open('POST', `${DIAGNOSTICS_API_BASE}/upload`)
     request.responseType = 'json'
+    if (API_KEY) request.setRequestHeader('X-API-Key', API_KEY)
 
     request.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {
@@ -340,244 +566,543 @@ function getReviewDecisionLabel(decision?: ReviewDecision) {
   return 'Pending human review'
 }
 
+// ─── Shared PDF asset loader ─────────────────────────────────────────────────
+async function loadPdfAssets(doc: import('jspdf').jsPDF): Promise<string | null> {
+  // Register fonts
+  const loadFont = async (path: string, name: string, style: string) => {
+    try {
+      const buf = await fetch(path).then((r) => r.arrayBuffer())
+      const bytes = new Uint8Array(buf)
+      let b64 = ''
+      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i])
+      b64 = btoa(b64)
+      const filename = path.split('/').pop()!
+      doc.addFileToVFS(filename, b64)
+      doc.addFont(filename, name, style)
+    } catch {/* skip if unavailable */}
+  }
+  await Promise.all([
+    loadFont('/fonts/InstrumentSerif-Regular.ttf',  'InstrumentSerif', 'normal'),
+    loadFont('/fonts/InstrumentSerif-Italic.ttf',   'InstrumentSerif', 'italic'),
+    loadFont('/fonts/InstrumentSans-Regular.ttf',   'InstrumentSans',  'normal'),
+    loadFont('/fonts/InstrumentSans-Bold.ttf',      'InstrumentSans',  'bold'),
+    loadFont('/fonts/InstrumentSans-SemiBold.ttf',  'InstrumentSans',  'semibold'),
+  ])
+
+  // Render SVG icon to a PNG data-URL via canvas
+  try {
+    const svgText = await fetch('/seedtag-icon.svg').then((r) => r.text())
+    const img = new Image()
+    const loaded = new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej })
+    img.src = 'data:image/svg+xml;base64,' + btoa(svgText)
+    await loaded
+    const canvas = document.createElement('canvas')
+    canvas.width = 64; canvas.height = 64
+    canvas.getContext('2d')!.drawImage(img, 0, 0, 64, 64)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
+}
+
+async function downloadUserGuide() {
+  const { jsPDF } = await import('jspdf')
+  const doc = new jsPDF()
+  const iconDataUrl = await loadPdfAssets(doc)
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 16
+  const ink: [number, number, number] = [26, 26, 26]
+  const gray: [number, number, number] = [107, 114, 128]
+  const border: [number, number, number] = [229, 229, 229]
+  const coral: [number, number, number] = [232, 93, 100]
+  const bgPage: [number, number, number] = [248, 248, 248]
+
+  const fillPage = () => { doc.setFillColor(...bgPage); doc.rect(0, 0, pageWidth, 300, 'F') }
+
+  const addPageHeader = (section: string) => {
+    fillPage()
+    if (iconDataUrl) doc.addImage(iconDataUrl, 'PNG', margin, 7, 7, 7)
+    doc.setFont('InstrumentSerif', 'italic')
+    doc.setFontSize(10)
+    doc.setTextColor(...coral)
+    doc.text('NeuralSeed', margin + 10, 13)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...gray)
+    doc.text(section, pageWidth - margin, 13, { align: 'right' })
+    doc.setDrawColor(...coral)
+    doc.setLineWidth(0.6)
+    doc.line(margin, 18, pageWidth - margin, 18)
+  }
+
+  const addEntry = (y: number, label: string, body: string): number => {
+    const bodyLines = doc.splitTextToSize(body, pageWidth - margin * 2 - 10)
+    const cardH = 12 + bodyLines.length * 4.5
+    doc.setFillColor(255, 255, 255)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.25)
+    doc.roundedRect(margin, y, pageWidth - margin * 2, cardH, 2, 2, 'FD')
+    doc.setFont('InstrumentSans', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(...ink)
+    doc.text(label, margin + 5, y + 7)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...gray)
+    doc.text(bodyLines, margin + 5, y + 12)
+    return y + cardH + 3
+  }
+
+  const addSection = (title: string, y: number) => {
+    doc.setFont('InstrumentSans', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(...ink)
+    doc.text(title, margin, y)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.25)
+    doc.line(margin, y + 2, pageWidth - margin, y + 2)
+    return y + 7
+  }
+
+  // ─── Page 1 — Main Metrics ────────────────────────────────────────
+  addPageHeader('User Guide')
+  doc.setFont('InstrumentSerif', 'italic')
+  doc.setFontSize(18)
+  doc.setTextColor(...ink)
+  doc.text('NeuralSeed User Guide', margin, 30)
+  doc.setFont('InstrumentSans', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...gray)
+  const intro = 'NeuralSeed analyzes your video creative and predicts how a human audience would respond to it, second by second. It does not replace creative judgment — it gives you data to back it up.'
+  doc.text(doc.splitTextToSize(intro, pageWidth - margin * 2), margin, 38)
+
+  let y = 52
+  y = addSection('Main Metrics', y)
+  y = addEntry(y, 'Attention Prediction (%)', 'How likely viewers are to pay attention at each moment in the ad. Above 75 is strong; below 60 signals a risk of disengagement before the key message.')
+  y = addEntry(y, 'Neural Resonance (Index)', 'How much sensory impact the ad generates: visual contrast, color, motion and complexity combined. The ideal range for CTV is 0.55–0.80. Too high can cause fatigue; too low may not register.')
+  y = addEntry(y, 'Strategy Category', 'How the engine classifies the creative type: Eye-Catching (immediate visual impact), Storytelling (builds narrative), or Clever Concept (insight-driven).')
+  y = addEntry(y, 'Prediction Confidence (%)', 'How reliable the overall diagnosis is. Above 80% is trustworthy. Below 70%, consider running again in Standard or Deep mode with more frames sampled.')
+  y = addEntry(y, 'Sensory Load (%)', 'Average information density across all frames. High load (above 55%) can cause cognitive fatigue on large CTV screens. Aim to keep key message frames below 50%.')
+  addEntry(y, 'Final Decision', 'Approved means the creative passed all attention, QA and signal thresholds. Revisions Required means at least one area needs attention before launching.')
+
+  // ─── Page 2 — QA + Human Review ──────────────────────────────────
+  doc.addPage()
+  addPageHeader('User Guide')
+  y = 26
+  y = addSection('Automated QA Checks', y)
+  y = addEntry(y, 'Spelling + Grammar', 'Detects visible text errors on screen. Mistakes damage brand credibility and can cause rejection by CTV ad platforms.')
+  y = addEntry(y, 'CTA Present', 'Checks whether the ad includes a visible call to action. Without a CTA, viewers do not know what to do after watching — conversion potential drops significantly.')
+  y = addEntry(y, 'Logo Visible', 'Verifies the brand logo appears clearly at some point in the video. Essential for brand recall on CTV large-screen viewing.')
+  y = addEntry(y, 'Safe Zones', 'Checks that critical elements sit within the safe display area. On some TV models, the outer edges are cropped, hiding content placed too close to the border.')
+  y = addEntry(y, 'Resolution', 'Confirms the video meets the minimum quality standard for CTV broadcast. Low-resolution videos may appear pixelated on 4K screens.')
+  y = addEntry(y, 'QR Code (if present)', 'If the ad includes a QR code, verifies it has enough contrast and size to be scanned from a distance.')
+  y += 3
+  y = addSection('Human Review Signals', y)
+  y = addEntry(y, 'Brand Voice', 'How well the visual tone and messaging align with brand identity. A low score means the creative may not feel like the brand even if technically correct.')
+  y = addEntry(y, 'Pacing', 'The editing rhythm and cut speed. For CTV (lean-back context), very fast cuts cause visual fatigue. Very slow cuts risk losing attention.')
+  addEntry(y, 'Transitions', 'Quality and coherence of scene transitions. Abrupt or overused effects lower perceived production quality and can drag down the Resonance score.')
+
+  // ─── Page 3 — Neural Signals + Markers ───────────────────────────
+  doc.addPage()
+  addPageHeader('User Guide')
+  y = 26
+  y = addSection('Neural Signal Regions', y)
+  y = addEntry(y, 'Visual Cortex (V1)', 'Predicted activation of the visual processing area. High activation means the frame has enough contrast, color and motion to strongly engage the viewer\'s vision system. Below 30% suggests visually flat content.')
+  y = addEntry(y, 'Temporal (Audio)', 'Predicted activation of the auditory-processing area. Driven by visual rhythm and pacing even without direct audio analysis. High values indicate strong audio-visual synchrony.')
+  y = addEntry(y, 'Prefrontal (Attention)', 'Predicted activation of the executive-attention area. High values mean the creative demands active cognitive engagement. Critical for brand message retention.')
+  y = addEntry(y, 'Amygdala (Emotional)', 'Predicted emotional engagement level. High activation means the creative evokes a strong emotional response — joy, tension, empathy. Key for memorable ads.')
+  y += 3
+  y = addSection('Frame Markers & Heatmap', y)
+  y = addEntry(y, 'Low Attention marker (red dot)', 'Marks a moment where predicted attention drops below 75. The viewer may disengage here. Click the dot to decide: OK (acceptable) or Flag (needs edit).')
+  y = addEntry(y, 'High Load marker (amber dot)', 'Marks a frame where sensory load exceeds 45%. Too much information at once can cause cognitive fatigue. Review whether the frame can be simplified.')
+  addEntry(y, 'Heatmap overlay (green / amber / red)', 'Shows spatial attention zones on the frame. Green = strong focal area (<40%). Amber = moderate attention (40-70%). Red = high cognitive load (>70%).')
+
+  doc.save('neuralseed-user-guide.pdf')
+}
+
+async function captureCreativeDataUrl(previewUrl: string | null, isStaticImage: boolean, filename?: string): Promise<{ dataUrl: string; ar: number; filename: string } | null> {
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    if (isStaticImage && previewUrl) {
+      const img = new Image()
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = previewUrl })
+      const scale = Math.min(1, 800 / img.naturalWidth)
+      canvas.width = Math.round(img.naturalWidth * scale)
+      canvas.height = Math.round(img.naturalHeight * scale)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    } else {
+      const video = document.querySelector('video')
+      if (!video || !video.videoWidth) return null
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      ctx.drawImage(video, 0, 0)
+    }
+    return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), ar: canvas.width / canvas.height, filename: filename ?? '' }
+  } catch { return null }
+}
+
 async function createDiagnosticPdf(
   result: DiagnosticResult,
-  reviewDecisions: Partial<Record<HybridReviewKey, ReviewDecision>>
+  reviewDecisions: Partial<Record<HybridReviewKey, ReviewDecision>>,
+  frameMarkers: FrameMarker[],
+  markerDecisions: Record<number, MarkerDecision>,
+  markerNotes: Record<number, string>,
+  creative: { dataUrl: string; ar: number; filename: string } | null
 ) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF()
+  const iconDataUrl = await loadPdfAssets(doc)
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const margin = 16
-  const pageBottom = pageHeight - margin
-  const coral: [number, number, number] = [232, 93, 100]
-  const dark: [number, number, number] = [22, 22, 24]
-  const muted: [number, number, number] = [110, 116, 128]
-  const light: [number, number, number] = [248, 248, 248]
+  const pageBottom = pageHeight - 12
 
-  const addHeader = (title: string, subtitle?: string) => {
-    doc.setFillColor(...dark)
-    doc.rect(0, 0, pageWidth, 28, 'F')
-    doc.setTextColor(...light)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(15)
-    doc.text(title, margin, 13)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(210, 210, 210)
-    doc.text(subtitle ?? `Request ${result.request_id}`, margin, 21)
+  // ── Design tokens ──────────────────────────────────────────────────
+  const ink: [number, number, number]   = [26, 26, 26]
+  const gray: [number, number, number]  = [107, 114, 128]
+  const border: [number, number, number]= [229, 229, 229]
+  const coral: [number, number, number] = [232, 93, 100]
+  const track: [number, number, number] = [245, 197, 199]
+  const bgPage: [number, number, number]= [248, 248, 248]
+  const green: [number, number, number] = [22, 163, 74]
+  const red: [number, number, number]   = [220, 38, 38]
+  const amber: [number, number, number] = [217, 119, 6]
+
+  // ── Primitives ─────────────────────────────────────────────────────
+  const fillPage = () => { doc.setFillColor(...bgPage); doc.rect(0, 0, pageWidth, pageHeight, 'F') }
+
+  const addHeader = (subtitle?: string) => {
+    fillPage()
+    if (iconDataUrl) doc.addImage(iconDataUrl, 'PNG', margin, 7, 7, 7)
+    doc.setFont('InstrumentSerif', 'italic')
+    doc.setFontSize(10)
+    doc.setTextColor(...coral)
+    doc.text('NeuralSeed', margin + 10, 13)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...gray)
+    doc.text(subtitle ?? new Date(result.timestamp).toLocaleDateString(), pageWidth - margin, 13, { align: 'right' })
     doc.setDrawColor(...coral)
-    doc.setLineWidth(1.2)
-    doc.line(margin, 27.5, pageWidth - margin, 27.5)
-    doc.setTextColor(...dark)
+    doc.setLineWidth(0.6)
+    doc.line(margin, 18, pageWidth - margin, 18)
   }
 
-  const addSectionTitle = (title: string, y: number) => {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
-    doc.setTextColor(...dark)
-    doc.text(title, margin, y)
-    doc.setDrawColor(...coral)
-    doc.setLineWidth(0.4)
+  const addCard = (x: number, y: number, w: number, h: number) => {
+    doc.setFillColor(255, 255, 255)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.25)
+    doc.roundedRect(x, y, w, h, 2, 2, 'FD')
+  }
+
+  const addProgressBar = (x: number, y: number, w: number, norm: number) => {
+    doc.setFillColor(...track)
+    doc.roundedRect(x, y, w, 3, 1, 1, 'F')
+    const fw = Math.max(0, Math.min(1, norm)) * w
+    if (fw > 0.5) { doc.setFillColor(...coral); doc.roundedRect(x, y, fw, 3, 1, 1, 'F') }
+  }
+
+  const addSectionLabel = (label: string, y: number) => {
+    doc.setFont('InstrumentSans', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...gray)
+    doc.text(label.toUpperCase(), margin, y)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.2)
     doc.line(margin, y + 2, pageWidth - margin, y + 2)
   }
 
-  const addMetricCard = (x: number, y: number, width: number, label: string, value: string, note: string) => {
-    doc.setFillColor(250, 250, 250)
-    doc.setDrawColor(224, 224, 224)
-    doc.roundedRect(x, y, width, 27, 2, 2, 'FD')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    doc.setTextColor(...muted)
-    doc.text(label.toUpperCase(), x + 4, y + 7)
-    doc.setTextColor(...dark)
-    doc.setFontSize(15)
-    doc.text(value, x + 4, y + 17)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...muted)
-    doc.text(doc.splitTextToSize(note, width - 8), x + 4, y + 23)
-  }
+  // ── PAGE 1 — Overview ──────────────────────────────────────────────
+  addHeader('Creative Diagnostics Report')
 
-  addHeader('NeuralSeed Creative Diagnostics', 'Predictive human response and CTV QA report')
+  // Verdict — full width
+  const verdictColor = result.final_decision.approved ? green : red
+  doc.setFont('InstrumentSerif', 'italic')
+  doc.setFontSize(26)
+  doc.setTextColor(...verdictColor)
+  doc.text(result.final_decision.approved ? 'Approved' : 'Revisions Required', margin, 34)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(22)
-  doc.setTextColor(...dark)
-  doc.text(result.final_decision.approved ? 'Approved' : 'Revisions Required', margin, 47)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(...muted)
-  doc.text(`Strategy: ${result.final_decision.strategy_category}`, margin, 56)
-  doc.text(`Generated: ${new Date(result.timestamp).toLocaleString()}`, margin, 63)
-
-  const cardWidth = (pageWidth - margin * 2 - 8) / 3
-  addMetricCard(margin, 76, cardWidth, 'Attention', `${result.attention_score.toFixed(1)}%`, 'Predicted focus')
-  addMetricCard(margin + cardWidth + 4, 76, cardWidth, 'Resonance', result.neural_resonance.toFixed(2), 'Emotional index')
-  addMetricCard(margin + cardWidth * 2 + 8, 76, cardWidth, 'Confidence', formatRatio(result.prediction_confidence), `${result.frames_analyzed} frames`)
-
-  addSectionTitle('Cortical Activation Map', 118)
-  const activationMap = [
-    ['Prefrontal', result.region_activations['Prefrontal Cortex (Attention)'] ?? 0, 67, 139, 23, 13, coral],
-    ['Visual', result.region_activations['Visual Cortex (V1-V4)'] ?? 0, 128, 142, 25, 14, [110, 231, 183] as [number, number, number]],
-    ['Temporal', result.region_activations['Auditory Cortex (Temporal)'] ?? 0, 96, 154, 30, 10, [96, 165, 250] as [number, number, number]],
-    ['Amygdala', result.region_activations['Amygdala (Emotional)'] ?? 0, 106, 146, 10, 10, [251, 191, 36] as [number, number, number]],
-  ] as const
-  doc.setDrawColor(210, 210, 210)
-  doc.setFillColor(248, 248, 248)
-  doc.roundedRect(margin, 127, pageWidth - margin * 2, 38, 2, 2, 'FD')
-  doc.setDrawColor(190, 190, 190)
-  doc.setFillColor(235, 235, 235)
-  doc.ellipse(105, 146, 60, 22, 'FD')
-  activationMap.forEach(([, value, x, y, rx, ry, color]) => {
-    const intensity = Math.max(0.18, Math.min(0.92, value))
-    const blended = color.map((channel) => Math.round(channel * intensity + 235 * (1 - intensity))) as [number, number, number]
-    doc.setFillColor(...blended)
-    doc.ellipse(x, y, rx, ry, 'F')
-  })
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.setTextColor(...muted)
-  doc.text('Schematic predicted activation map. Not a clinical scan.', margin + 82, 134)
-  activationMap.forEach(([label, value], index) => {
-    doc.text(`${label}: ${(value * 100).toFixed(1)}%`, margin + 82, 143 + index * 5)
-  })
-
-  addSectionTitle('Executive Summary', 182)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(...dark)
-  const summary = [
-    `Final gate: ${result.final_decision.approved ? 'Approved' : 'Revisions required'}.`,
-    `Sensory load: ${(result.sensory_load * 100).toFixed(1)}%. Brand voice score: ${formatRatio(result.hybrid_flags.brand_voice_score)}.`,
-    `Automated checks passed: ${Object.values(result.ai_automated).filter(Boolean).length}/6.`,
-    `Pacing warnings: ${result.hybrid_flags.pacing_warnings.join('; ') || 'None'}.`,
-    `Transition warnings: ${result.hybrid_flags.transition_warnings.join('; ') || 'None'}.`,
-  ]
-  let cursorY = 193
-  summary.forEach((line) => {
-    doc.text(doc.splitTextToSize(line, pageWidth - margin * 2), margin, cursorY)
-    cursorY += 7
-  })
-
-  const humanReviewRows = buildHybridReviewItems(result)
-  const getHumanReviewRowHeight = (item: HybridReviewItem) => {
-    const detailLines = doc
-      .splitTextToSize(`${item.value} - ${item.detail}`, pageWidth - margin * 2 - 8)
-      .slice(0, 2)
-    return detailLines.length > 1 ? 25 : 18
-  }
-  const humanReviewSectionHeight = humanReviewRows.reduce(
-    (height, item) => height + getHumanReviewRowHeight(item) + 4,
-    20,
+  doc.setFont('InstrumentSans', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...gray)
+  doc.text(
+    `${result.final_decision.strategy_category}  ·  ${result.frames_analyzed} frames  ·  ${new Date(result.timestamp).toLocaleString()}`,
+    margin, 41
   )
 
-  if (cursorY + 8 + humanReviewSectionHeight > pageBottom) {
+  // 4 metric cards
+  const cw = (pageWidth - margin * 2 - 12) / 4
+  const metricCards = [
+    { label: 'Attention',     value: `${result.attention_score.toFixed(0)}%`,             norm: result.attention_score / 100 },
+    { label: 'Resonance',     value: result.neural_resonance.toFixed(2),                  norm: result.neural_resonance },
+    { label: 'Confidence',    value: formatRatio(result.prediction_confidence),            norm: result.prediction_confidence },
+    { label: 'Sensory Load',  value: `${(result.sensory_load * 100).toFixed(0)}%`,        norm: result.sensory_load },
+  ]
+  metricCards.forEach((m, i) => {
+    const cx = margin + i * (cw + 4)
+    addCard(cx, 46, cw, 32)
+    doc.setFont('InstrumentSans', 'bold')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...gray)
+    doc.text(m.label.toUpperCase(), cx + 4, 53)
+    doc.setFont('InstrumentSerif', 'italic')
+    doc.setFontSize(16)
+    doc.setTextColor(...ink)
+    doc.text(m.value, cx + 4, 65)
+    addProgressBar(cx + 4, 69, cw - 8, m.norm)
+  })
+
+  // Neural signals — 2-column metric rows
+  addSectionLabel('Neural Signals', 88)
+  const regions: [string, number][] = [
+    ['Prefrontal (Attention)', result.region_activations['Prefrontal Cortex (Attention)'] ?? 0],
+    ['Visual Cortex (V1)',     result.region_activations['Visual Cortex (V1-V4)'] ?? 0],
+    ['Temporal (Audio)',       result.region_activations['Auditory Cortex (Temporal)'] ?? 0],
+    ['Amygdala (Emotional)',   result.region_activations['Amygdala (Emotional)'] ?? 0],
+  ]
+  const rColW = (pageWidth - margin * 2 - 6) / 2
+  regions.forEach(([label, val], i) => {
+    const col = i % 2; const row = Math.floor(i / 2)
+    const rx = margin + col * (rColW + 6)
+    const ry = 93 + row * 18
+    addCard(rx, ry, rColW, 14)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...ink)
+    doc.text(label, rx + 4, ry + 6)
+    doc.setTextColor(...gray)
+    doc.text(`${(val * 100).toFixed(0)}%`, rx + rColW - 4, ry + 6, { align: 'right' })
+    addProgressBar(rx + 4, ry + 8.5, rColW - 8, val)
+  })
+
+  // QA Checks
+  addSectionLabel('Automated QA', 134)
+  const qaItems: [string, boolean | null][] = [
+    ['Spelling + Grammar', result.ai_automated.spelling_grammar_passed],
+    ['CTA Present',         result.ai_automated.cta_present],
+    ['Logo Visible',        result.ai_automated.logo_visible],
+    ['Safe Zones',          result.ai_automated.safe_zones_passed],
+    ['Resolution',          result.ai_automated.resolution_passed],
+    ...(result.ai_automated.qr_code_scannable != null
+      ? [['QR Scannable', result.ai_automated.qr_code_scannable] as [string, boolean | null]]
+      : []),
+  ]
+  const qColW = (pageWidth - margin * 2 - 4) / 2
+  qaItems.forEach(([label, passed], i) => {
+    const col = i % 2; const row = Math.floor(i / 2)
+    const qx = margin + col * (qColW + 4)
+    const qy = 139 + row * 13
+    addCard(qx, qy, qColW, 9)
+    const dotC: [number, number, number] = passed === true ? green : passed === false ? red : gray
+    doc.setFillColor(...dotC)
+    doc.circle(qx + 5, qy + 4.5, 1.8, 'F')
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...ink)
+    doc.text(label, qx + 10, qy + 6)
+    doc.setTextColor(...dotC)
+    doc.text(passed === true ? 'Pass' : passed === false ? 'Fail' : '—', qx + qColW - 4, qy + 6, { align: 'right' })
+  })
+
+  // Executive summary block
+  const qRows = Math.ceil(qaItems.length / 2)
+  const summaryY = 139 + qRows * 13 + 6
+  addSectionLabel('Executive Summary', summaryY)
+  doc.setFont('InstrumentSans', 'normal')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...gray)
+  const summaryLines = [
+    `Sensory load: ${(result.sensory_load * 100).toFixed(1)}%   Brand voice: ${formatRatio(result.hybrid_flags.brand_voice_score)}   Checks passed: ${Object.values(result.ai_automated).filter(Boolean).length} / 6`,
+    result.hybrid_flags.pacing_warnings.length ? `Pacing: ${result.hybrid_flags.pacing_warnings.join('; ')}` : '',
+    result.hybrid_flags.transition_warnings.length ? `Transitions: ${result.hybrid_flags.transition_warnings.join('; ')}` : '',
+  ].filter(Boolean)
+  let cursorY = summaryY + 6
+  summaryLines.forEach((line) => {
+    doc.text(doc.splitTextToSize(line, pageWidth - margin * 2), margin, cursorY)
+    cursorY += 5
+  })
+
+  // ── PAGE 2 — Creative Preview (only if image captured) ───────────
+  if (creative) {
     doc.addPage()
-    addHeader('Human Hybrid Review', 'Human-in-the-loop review decisions')
-    addSectionTitle('Human Hybrid Review', 42)
-    cursorY = 54
-  } else {
-    addSectionTitle('Human Hybrid Review', cursorY + 8)
-    cursorY += 20
+    addHeader('Creative Preview')
+    const maxW = pageWidth - margin * 2
+    const maxH = pageHeight - 50
+    const imgW = creative.ar >= 1 ? maxW : maxH * creative.ar
+    const imgH = creative.ar >= 1 ? maxW / creative.ar : maxH
+    const fw = Math.min(imgW, maxW)
+    const fh = Math.min(imgH, maxH)
+    const ix = margin + (maxW - fw) / 2
+    const iy = 26 + (maxH - fh) / 2
+    doc.setFillColor(255, 255, 255)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.3)
+    doc.roundedRect(ix - 2, iy - 2, fw + 4, fh + 4, 3, 3, 'FD')
+    doc.addImage(creative.dataUrl, 'JPEG', ix, iy, fw, fh)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...gray)
+    doc.text(creative.filename ?? 'Creative', pageWidth / 2, iy + fh + 8, { align: 'center' })
   }
 
-  humanReviewRows.forEach((item) => {
-    const decision = reviewDecisions[item.id]
-    const status = getReviewDecisionLabel(decision)
-    const detailLines = doc
-      .splitTextToSize(`${item.value} - ${item.detail}`, pageWidth - margin * 2 - 8)
-      .slice(0, 2)
-    const boxHeight = detailLines.length > 1 ? 25 : 18
-    const statusColor: [number, number, number] =
-      decision === 'confirmed'
-        ? [22, 163, 74]
-        : decision === 'rejected'
-          ? [220, 38, 38]
-          : muted
-
-    if (cursorY + boxHeight > pageBottom) {
-      doc.addPage()
-      addHeader('Human Hybrid Review', 'Human-in-the-loop review decisions')
-      addSectionTitle('Human Hybrid Review', 42)
-      cursorY = 54
-    }
-
-    doc.setFillColor(250, 250, 250)
-    doc.setDrawColor(224, 224, 224)
-    doc.roundedRect(margin, cursorY - 6, pageWidth - margin * 2, boxHeight, 2, 2, 'FD')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...dark)
-    doc.text(item.label, margin + 4, cursorY)
-    doc.setTextColor(...statusColor)
-    doc.text(status, pageWidth - margin - 4, cursorY, { align: 'right' })
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...muted)
-    doc.text(detailLines, margin + 4, cursorY + 7)
-    cursorY += boxHeight + 4
-  })
-
+  // ── PAGE 3 — Human Review + Action Plan ───────────────────────────
   doc.addPage()
-  addHeader('Action Plan', 'Prioritized edit recommendations')
-  addSectionTitle('Actionable Steps', 42)
-  cursorY = 53
-  result.actionable_steps.forEach((step, index) => {
-    const boxHeight = 24
-    doc.setFillColor(255, 248, 248)
-    doc.setDrawColor(238, 190, 194)
-    doc.roundedRect(margin, cursorY - 6, pageWidth - margin * 2, boxHeight, 2, 2, 'FD')
-    doc.setFont('helvetica', 'bold')
+  addHeader('Human Review & Action Plan')
+  cursorY = 26
+
+  addSectionLabel('Human Review', cursorY)
+  cursorY += 7
+  buildHybridReviewItems(result).forEach((item) => {
+    const decision = reviewDecisions[item.id]
+    const statusC: [number, number, number] = decision === 'confirmed' ? green : decision === 'rejected' ? red : gray
+    const statusLabel = decision === 'confirmed' ? 'Confirmed' : decision === 'rejected' ? 'Rejected' : 'Pending'
+    const bodyLines = doc.splitTextToSize(`${item.value} — ${item.detail}`, pageWidth - margin * 2 - 10).slice(0, 2)
+    const cardH = bodyLines.length > 1 ? 24 : 18
+    if (cursorY + cardH > pageBottom) { doc.addPage(); addHeader('Human Review'); cursorY = 26 }
+    addCard(margin, cursorY, pageWidth - margin * 2, cardH)
+    doc.setFont('InstrumentSans', 'bold')
     doc.setFontSize(8)
-    doc.setTextColor(...coral)
-    doc.text(`${index + 1}. ${step.priority} - ${step.frame_range}`, margin + 4, cursorY)
-    doc.setFontSize(9)
-    doc.setTextColor(...dark)
-    doc.text(doc.splitTextToSize(step.title, pageWidth - margin * 2 - 8), margin + 4, cursorY + 6)
-    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...ink)
+    doc.text(item.label, margin + 5, cursorY + 7)
+    doc.setTextColor(...statusC)
+    doc.text(statusLabel, pageWidth - margin - 5, cursorY + 7, { align: 'right' })
+    doc.setFont('InstrumentSans', 'normal')
     doc.setFontSize(7)
-    doc.setTextColor(...muted)
-    doc.text(doc.splitTextToSize(step.rationale, pageWidth - margin * 2 - 8), margin + 4, cursorY + 12)
-    cursorY += boxHeight + 4
+    doc.setTextColor(...gray)
+    doc.text(bodyLines, margin + 5, cursorY + 13)
+    cursorY += cardH + 3
   })
 
+  if (result.actionable_steps.length > 0) {
+    cursorY += 4
+    addSectionLabel('Action Plan', cursorY)
+    cursorY += 7
+    result.actionable_steps.forEach((step, index) => {
+      const ratioLines = doc.splitTextToSize(step.rationale, pageWidth - margin * 2 - 10).slice(0, 2)
+      const cardH = 12 + ratioLines.length * 4.5
+      if (cursorY + cardH > pageBottom) { doc.addPage(); addHeader('Action Plan'); cursorY = 26 }
+      addCard(margin, cursorY, pageWidth - margin * 2, cardH)
+      doc.setFillColor(...coral)
+      doc.roundedRect(margin + 4, cursorY + 3, 18, 5.5, 1, 1, 'F')
+      doc.setFont('InstrumentSans', 'bold')
+      doc.setFontSize(5.5)
+      doc.setTextColor(255, 255, 255)
+      doc.text(`${index + 1}. ${step.priority}`, margin + 5, cursorY + 7)
+      doc.setFontSize(8)
+      doc.setTextColor(...ink)
+      doc.text(doc.splitTextToSize(step.title, pageWidth - margin * 2 - 30).slice(0, 1)[0], margin + 26, cursorY + 7)
+      doc.setTextColor(...gray)
+      doc.text(step.frame_range, pageWidth - margin - 5, cursorY + 7, { align: 'right' })
+      doc.setFont('InstrumentSans', 'normal')
+      doc.setFontSize(7)
+      doc.text(ratioLines, margin + 5, cursorY + 11)
+      cursorY += cardH + 3
+    })
+  }
+
+  // ── PAGE 3 — Frame Table ───────────────────────────────────────────
   doc.addPage()
   addHeader('Frame-Level Predicted Response')
-  addSectionTitle('Top Frame Diagnostics', 42)
-  cursorY = 54
+  addSectionLabel('Frame Diagnostics', 26)
+  cursorY = 33
 
-  doc.setFillColor(...dark)
-  doc.rect(margin, cursorY - 6, pageWidth - margin * 2, 9, 'F')
-  doc.setTextColor(...light)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  doc.text('TIME', margin + 3, cursorY)
-  doc.text('ATTN', margin + 24, cursorY)
-  doc.text('REGION', margin + 46, cursorY)
-  doc.text('RESPONSE / RECOMMENDATION', margin + 92, cursorY)
-  cursorY += 8
-
-  result.frame_insights.slice(0, 18).forEach((frame, index) => {
-    if (cursorY > 270) {
-      doc.addPage()
-      addHeader('Frame-Level Predicted Response')
-      cursorY = 42
-    }
-    const rowHeight = 16
-    doc.setFillColor(index % 2 === 0 ? 250 : 244, index % 2 === 0 ? 250 : 244, index % 2 === 0 ? 250 : 244)
-    doc.rect(margin, cursorY - 6, pageWidth - margin * 2, rowHeight, 'F')
-    doc.setTextColor(...dark)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    doc.text(`${frame.timestamp_seconds.toFixed(1)}s`, margin + 3, cursorY)
-    doc.text(`${frame.attention_score.toFixed(0)}%`, margin + 24, cursorY)
-    doc.text(doc.splitTextToSize(frame.dominant_region.replace(' Cortex', ''), 42), margin + 46, cursorY)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(...muted)
-    doc.text(doc.splitTextToSize(`${frame.cognitive_response} ${frame.recommendation}`, 86), margin + 92, cursorY)
-    cursorY += rowHeight
+  // Table header
+  doc.setFillColor(...ink)
+  doc.rect(margin, cursorY, pageWidth - margin * 2, 7, 'F')
+  doc.setFont('InstrumentSans', 'bold')
+  doc.setFontSize(6)
+  doc.setTextColor(255, 255, 255)
+  ;['TIME', 'ATTN', 'REGION', 'RESPONSE'].forEach((h, i) => {
+    doc.text(h, margin + [3, 21, 42, 88][i], cursorY + 5)
   })
+  cursorY += 9
+
+  result.frame_insights.slice(0, 22).forEach((frame, index) => {
+    if (cursorY > pageBottom - 10) { doc.addPage(); addHeader('Frame-Level Response'); cursorY = 26 }
+    const rowH = 9
+    doc.setFillColor(index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250)
+    doc.setDrawColor(...border)
+    doc.setLineWidth(0.15)
+    doc.rect(margin, cursorY, pageWidth - margin * 2, rowH, 'FD')
+    doc.setFont('InstrumentSans', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(...ink)
+    doc.text(`${frame.timestamp_seconds.toFixed(1)}s`, margin + 3, cursorY + 6)
+    const attnC: [number, number, number] = frame.attention_score >= 75 ? green : frame.attention_score >= 52 ? amber : red
+    doc.setTextColor(...attnC)
+    doc.text(`${frame.attention_score.toFixed(0)}%`, margin + 21, cursorY + 6)
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setTextColor(...gray)
+    const regionShort = frame.dominant_region.replace(' Cortex (Attention)', '').replace(' (V1-V4)', '').replace(' (Temporal)', '').replace(' (Emotional)', '')
+    doc.text(doc.splitTextToSize(regionShort, 42)[0], margin + 42, cursorY + 6)
+    doc.text(doc.splitTextToSize(frame.cognitive_response, 82)[0], margin + 88, cursorY + 6)
+    cursorY += rowH
+  })
+
+  // ── PAGE 4 — Frame Markers (if any) ───────────────────────────────
+  if (frameMarkers.length > 0) {
+    doc.addPage()
+    addHeader('Human Gate — Frame Review')
+    const reviewedCount = Object.keys(markerDecisions).length
+    doc.setFont('InstrumentSans', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...gray)
+    doc.text(
+      `${reviewedCount} of ${frameMarkers.length} reviewed  ·  ${frameMarkers.filter(m => m.type === 'low-attention').length} low-attention  ·  ${frameMarkers.filter(m => m.type === 'high-load').length} high-load`,
+      pageWidth - margin, 26, { align: 'right' }
+    )
+    addSectionLabel('Frame Markers', 26)
+    cursorY = 33
+
+    frameMarkers.forEach((m) => {
+      const decision = markerDecisions[m.frameIndex]
+      const note = markerNotes[m.frameIndex] ?? ''
+      const noteLines = note.trim() ? doc.splitTextToSize(note.trim(), pageWidth - margin * 2 - 10).slice(0, 2) : []
+      const cardH = 24 + noteLines.length * 4.5
+      if (cursorY + cardH > pageBottom) { doc.addPage(); addHeader('Human Gate'); cursorY = 26 }
+
+      const typeC: [number, number, number] = m.type === 'low-attention' ? red : amber
+      const decisionC: [number, number, number] = decision === 'ok' ? green : decision === 'flagged' ? red : gray
+      const decisionLabel = decision === 'ok' ? 'OK' : decision === 'flagged' ? 'Flagged' : 'Pending'
+
+      addCard(margin, cursorY, pageWidth - margin * 2, cardH)
+
+      // Timestamp
+      doc.setFont('InstrumentSans', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...ink)
+      doc.text(`${m.timestampSeconds.toFixed(1)}s`, margin + 5, cursorY + 8)
+
+      // Type badge
+      const badgeW = m.type === 'low-attention' ? 24 : 19
+      doc.setFillColor(...typeC)
+      doc.roundedRect(margin + 22, cursorY + 3, badgeW, 6, 1, 1, 'F')
+      doc.setFont('InstrumentSans', 'bold')
+      doc.setFontSize(5.5)
+      doc.setTextColor(255, 255, 255)
+      doc.text(m.type === 'low-attention' ? 'Low Attn' : 'Hi Load', margin + 23, cursorY + 7.5)
+
+      // Decision
+      doc.setFont('InstrumentSans', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...decisionC)
+      doc.text(decisionLabel, pageWidth - margin - 5, cursorY + 8, { align: 'right' })
+
+      // Metrics
+      doc.setFont('InstrumentSans', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...gray)
+      doc.text(`Attention: ${m.attentionScore.toFixed(0)}%  ·  Load: ${(m.sensoryLoad * 100).toFixed(0)}%`, margin + 5, cursorY + 15)
+      doc.text(doc.splitTextToSize(m.recommendation, pageWidth - margin * 2 - 10)[0], margin + 5, cursorY + 20)
+
+      if (noteLines.length > 0) {
+        doc.setTextColor(...ink)
+        doc.text(noteLines, margin + 5, cursorY + 24)
+      }
+
+      cursorY += cardH + 3
+    })
+  }
 
   doc.save(`neuralseed-report-${result.request_id}.pdf`)
 }
@@ -631,6 +1156,7 @@ const StatCard = ({
   trend,
   icon: Icon,
   info,
+  badge,
 }: {
   title: string
   value: string
@@ -638,148 +1164,243 @@ const StatCard = ({
   trend?: string
   icon?: LucideIcon
   info: string
-}) => (
-  <div className="glass-card p-5 relative overflow-visible group">
-    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-       {Icon && <Icon size={40} className="text-seedtag-coral" />}
-    </div>
-    <div className="mb-1 flex items-center gap-2">
-      <p className="text-sm text-gray-400">{title}</p>
-      <InfoTip text={info} />
-    </div>
-    <div className="flex items-baseline gap-2">
-      <h3 className="text-2xl font-bold">{value}</h3>
-      <span className="text-gray-500 text-sm font-medium">{unit}</span>
-    </div>
-    {trend && (
-      <p className="text-xs mt-2 text-seedtag-coral font-medium flex items-center gap-1">
-        <Activity size={12} /> {trend}
-      </p>
-    )}
-  </div>
-)
+  badge?: { text: string; variant: 'green' | 'amber' | 'red' | 'blue' | 'gray' }
+}) => {
+  const badgeStyles: Record<string, string> = {
+    green: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+    amber: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
+    red: 'border-red-400/30 bg-red-400/10 text-red-300',
+    blue: 'border-blue-400/30 bg-blue-400/10 text-blue-300',
+    gray: 'border-white/10 bg-white/5 text-gray-400',
+  }
+  return (
+    <FlipCard
+      front={
+        <div className="glass-card p-5 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+            {Icon && <Icon size={40} className="text-seedtag-coral" />}
+          </div>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <p className="text-sm text-gray-400">{title}</p>
+            {badge && (
+              <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${badgeStyles[badge.variant]}`}>
+                {badge.text}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-2xl font-bold">{value}</h3>
+            <span className="text-gray-500 text-sm font-medium">{unit}</span>
+          </div>
+          {trend && (
+            <p className="text-xs mt-2 text-seedtag-coral font-medium flex items-center gap-1">
+              <Activity size={12} /> {trend}
+            </p>
+          )}
+        </div>
+      }
+      back={
+        <div className="glass-card p-5 flex flex-col justify-center min-h-full">
+          <p className="mb-2 pr-6 text-[10px] font-bold uppercase tracking-widest text-gray-500">{title}</p>
+          <p className="text-xs leading-relaxed text-gray-200">{info}</p>
+        </div>
+      }
+    />
+  )
+}
 
-function BrainActivationMap({
-  activeRegion,
-  activationLevel,
-  activations,
+const FlipCard = ({
+  front,
+  back,
+  className = '',
 }: {
-  activeRegion: BrainRegionKey
-  activationLevel: number
-  activations?: Record<string, number>
-}) {
-  const regionValues = {
-    visual: activations?.['Visual Cortex (V1-V4)'] ?? (activeRegion === 'visual' || activeRegion === 'all' ? activationLevel : 0.22),
-    temporal: activations?.['Auditory Cortex (Temporal)'] ?? (activeRegion === 'temporal' || activeRegion === 'all' ? activationLevel : 0.2),
-    frontal: activations?.['Prefrontal Cortex (Attention)'] ?? (activeRegion === 'frontal' || activeRegion === 'all' ? activationLevel : 0.24),
-    emotional: activations?.['Amygdala (Emotional)'] ?? activationLevel * 0.8,
-  }
+  front: ReactNode
+  back: ReactNode
+  className?: string
+}) => {
+  const [flipped, setFlipped] = useState(false)
+  return (
+    <div className={className} style={{ perspective: '800px' }}>
+      <div
+        style={{
+          display: 'grid',
+          transformStyle: 'preserve-3d',
+          transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)',
+          transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        }}
+      >
+        {/* Front */}
+        <div style={{ gridArea: '1/1', backfaceVisibility: 'hidden', position: 'relative' }}>
+          {front}
+          <button
+            type="button"
+            onClick={() => setFlipped(true)}
+            title="What is this?"
+            className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-black/40 text-[11px] font-bold leading-none text-gray-400 transition-all hover:border-seedtag-coral/60 hover:text-seedtag-coral"
+          >
+            +
+          </button>
+        </div>
+        {/* Back */}
+        <div
+          style={{
+            gridArea: '1/1',
+            backfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+            position: 'relative',
+          }}
+        >
+          {back}
+          <button
+            type="button"
+            onClick={() => setFlipped(false)}
+            title="Back"
+            className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-black/40 text-[13px] leading-none text-gray-400 transition-all hover:text-white"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-  const regionOpacity = (key: keyof typeof regionValues) => {
-    if (activeRegion === 'all') {
-      return 0.25 + regionValues[key] * 0.65
-    }
-    if (
-      (activeRegion === 'visual' && key === 'visual') ||
-      (activeRegion === 'temporal' && key === 'temporal') ||
-      (activeRegion === 'frontal' && key === 'frontal')
-    ) {
-      return 0.95
-    }
-    return 0.24
-  }
+function StaticImageViewer({
+  imageUrl,
+  heatmap,
+  isAnalyzing,
+  isDone,
+  selectedFileName,
+  onSelectFile,
+  onUpload,
+  onAnalyze,
+  canAnalyze,
+  onReset,
+}: {
+  imageUrl: string
+  heatmap: number[][] | null
+  isAnalyzing: boolean
+  isDone: boolean
+  selectedFileName: string | null
+  onSelectFile: (f: File) => void
+  onUpload: () => Promise<unknown>
+  onAnalyze: () => Promise<void>
+  canAnalyze: boolean
+  onReset: () => void
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const img = imgRef.current
+    if (!canvas || !img || !heatmap) { if (canvas) { const ctx = canvas.getContext('2d'); ctx?.clearRect(0, 0, canvas.width, canvas.height) } return }
+    canvas.width = img.clientWidth
+    canvas.height = img.clientHeight
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const grid = heatmap.length
+    const cellW = canvas.width / grid
+    const cellH = canvas.height / grid
+    heatmap.forEach((row, r) => {
+      row.forEach((v, c) => {
+        const alpha = 0.15 + v * 0.55
+        ctx.fillStyle = v < 0.4 ? `rgba(34,197,94,${alpha})` : v < 0.7 ? `rgba(251,191,36,${alpha})` : `rgba(239,68,68,${alpha})`
+        ctx.fillRect(c * cellW, r * cellH, cellW, cellH)
+      })
+    })
+  }, [heatmap])
+
+  const handleUploadAndAnalyze = async () => { await onUpload(); await onAnalyze() }
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-      <SectionHeading
-        title="Cortical Activation Map"
-        info={RESULT_EXPLAINERS.brainMap}
-        badge={
-          <span className="rounded border border-seedtag-coral/20 bg-seedtag-coral/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-seedtag-coral">
-            {getRegionLabel(activeRegion)}
-          </span>
-        }
-      />
-      <div className="mt-4 rounded-lg border border-white/10 bg-black/25 p-3">
-        <svg viewBox="0 0 320 190" className="h-44 w-full" role="img" aria-label="Predicted cortical activation map">
-          <defs>
-            <filter id="regionGlow">
-              <feGaussianBlur stdDeviation="5" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <path
-            d="M70 105C58 72 82 38 119 32c20-22 58-16 70 4 34-2 58 20 62 50 22 13 24 50 3 70-18 18-48 20-70 8-20 15-58 13-75-5-25 5-52-12-55-36-2-7 0-13 16-18Z"
-            fill="rgba(255,255,255,0.06)"
-            stroke="rgba(255,255,255,0.18)"
-            strokeWidth="3"
-          />
-          <ellipse
-            cx="112"
-            cy="72"
-            rx="47"
-            ry="31"
-            fill="#E85D64"
-            opacity={regionOpacity('frontal')}
-            filter="url(#regionGlow)"
-          />
-          <ellipse
-            cx="207"
-            cy="88"
-            rx="49"
-            ry="34"
-            fill="#6EE7B7"
-            opacity={regionOpacity('visual')}
-            filter="url(#regionGlow)"
-          />
-          <ellipse
-            cx="150"
-            cy="132"
-            rx="57"
-            ry="28"
-            fill="#60A5FA"
-            opacity={regionOpacity('temporal')}
-            filter="url(#regionGlow)"
-          />
-          <circle
-            cx="169"
-            cy="108"
-            r="20"
-            fill="#FBBF24"
-            opacity={0.25 + regionValues.emotional * 0.65}
-            filter="url(#regionGlow)"
-          />
-          <text x="77" y="26" fill="rgba(255,255,255,0.72)" fontSize="11" fontWeight="700">Prefrontal</text>
-          <text x="222" y="45" fill="rgba(255,255,255,0.72)" fontSize="11" fontWeight="700">Visual</text>
-          <text x="111" y="178" fill="rgba(255,255,255,0.72)" fontSize="11" fontWeight="700">Temporal</text>
-          <text x="183" y="116" fill="rgba(255,255,255,0.72)" fontSize="10" fontWeight="700">Amygdala</text>
-        </svg>
+    <div className="glass-card overflow-hidden relative w-full border-white/5 bg-black">
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onSelectFile(f) }} />
+      <div className="bg-black flex items-center justify-center" style={{ minHeight: '320px', maxHeight: '60vh' }}>
+        <div className="relative inline-block">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img ref={imgRef} src={imageUrl} alt="Creative" className="block max-w-full" style={{ maxHeight: '60vh', display: 'block' }} />
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ mixBlendMode: 'screen', filter: 'blur(18px) saturate(1.4)', opacity: heatmap ? 1 : 0, transition: 'opacity 0.4s' }} />
+          {isAnalyzing && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="text-center space-y-2">
+                <div className="w-8 h-8 border-2 border-seedtag-coral border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs text-gray-300">Analyzing image...</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {[
-          ['Visual', regionValues.visual],
-          ['Temporal', regionValues.temporal],
-          ['Prefrontal', regionValues.frontal],
-          ['Emotional', regionValues.emotional],
-        ].map(([label, value]) => (
-          <div key={label as string} className="rounded border border-white/10 bg-black/20 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">{label as string}</p>
-            <p className="mt-1 text-xs font-bold text-white">{((value as number) * 100).toFixed(1)}%</p>
-          </div>
-        ))}
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-white/5">
+        <span className="text-[10px] text-gray-500 truncate max-w-[160px]">{selectedFileName ?? 'Static image'}</span>
+        <div className="flex gap-2">
+          {isDone ? (
+            <button type="button" onClick={onReset}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-gray-300 hover:bg-white/10 transition-all">
+              New Creative
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => inputRef.current?.click()}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-gray-300 hover:bg-white/10 transition-all">
+                Change
+              </button>
+              {canAnalyze && !isAnalyzing && (
+                <button type="button" onClick={handleUploadAndAnalyze}
+                  className="rounded-lg border border-seedtag-coral/40 bg-seedtag-coral/20 px-3 py-1.5 text-[10px] font-bold text-seedtag-coral hover:bg-seedtag-coral/30 transition-all">
+                  Analyze
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </section>
+    </div>
+  )
+}
+
+
+function DeltaBadge({ current, avg, higherIsBetter = true }: { current: number; avg: number; higherIsBetter?: boolean }) {
+  const delta = current - avg
+  const good = higherIsBetter ? delta >= 0 : delta <= 0
+  if (Math.abs(delta) < 0.5) return <span className="text-[10px] text-gray-500">≈ avg</span>
+  return (
+    <span className={`text-[10px] font-bold ${good ? 'text-emerald-400' : 'text-red-400'}`}>
+      {delta > 0 ? '+' : ''}{delta.toFixed(1)} {good ? '↑' : '↓'}
+    </span>
+  )
+}
+
+function AbMetricRow({ label, valA, valB, higherIsBetter = true }: { label: string; valA: number | null; valB: number | null; higherIsBetter?: boolean }) {
+  const winner = valA !== null && valB !== null
+    ? (higherIsBetter ? (valA >= valB ? 'a' : 'b') : (valA <= valB ? 'a' : 'b'))
+    : null
+  return (
+    <div className="grid grid-cols-3 gap-2 items-center py-2 border-b border-white/5 last:border-0">
+      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{label}</span>
+      <div className={`text-center rounded-lg py-1 text-xs font-bold ${winner === 'a' ? 'bg-seedtag-coral/20 text-seedtag-coral' : 'text-gray-300'}`}>
+        {valA !== null ? valA.toFixed(1) : '—'}
+        {winner === 'a' && <span className="ml-1 text-[9px]">✓</span>}
+      </div>
+      <div className={`text-center rounded-lg py-1 text-xs font-bold ${winner === 'b' ? 'bg-seedtag-coral/20 text-seedtag-coral' : 'text-gray-300'}`}>
+        {valB !== null ? valB.toFixed(1) : '—'}
+        {winner === 'b' && <span className="ml-1 text-[9px]">✓</span>}
+      </div>
+    </div>
   )
 }
 
 export default function DashboardPage() {
   const [activation, setActivation] = useState(0.4)
   const [region, setRegion] = useState<BrainRegionKey>('all')
+  const [hoveredRegion, setHoveredRegion] = useState<BrainRegionKey | null>(null)
+  const [showConclusion, setShowConclusion] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const isStaticImage = Boolean(selectedFile && /\.(png|jpe?g|webp)$/i.test(selectedFile.name))
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null)
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -795,10 +1416,95 @@ export default function DashboardPage() {
   const [formatType, setFormatType] = useState<'bespoke' | 'frame' | 'standard_video'>('bespoke')
   const [reviewDecisions, setReviewDecisions] = useState<Partial<Record<HybridReviewKey, ReviewDecision>>>({})
   const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | null>(null)
+  const [heatmapEnabled, setHeatmapEnabled] = useState(true)
+  const [selectedFrame, setSelectedFrame] = useState<FrameInsight | null>(null)
   const [markerDecisions, setMarkerDecisions] = useState<Record<number, MarkerDecision>>({})
   const [markerNotes, setMarkerNotes] = useState<Record<number, string>>({})
   const [videoSeekTarget, setVideoSeekTarget] = useState<number | null>(null)
   const [gateExpanded, setGateExpanded] = useState(false)
+  const [historySummaries, setHistorySummaries] = useState<HistorySummary[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [historyEditMode, setHistoryEditMode] = useState(false)
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set())
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false)
+  const [lifecycleTab, setLifecycleTab] = useState<'benchmark' | 'ab'>('benchmark')
+  const [abIdA, setAbIdA] = useState<string>('')
+  const [abIdB, setAbIdB] = useState<string>('')
+  const [abResultA, setAbResultA] = useState<DiagnosticResult | null>(null)
+  const [abResultB, setAbResultB] = useState<DiagnosticResult | null>(null)
+  const [abLoadingA, setAbLoadingA] = useState(false)
+  const [abLoadingB, setAbLoadingB] = useState(false)
+
+  const histAvg = useMemo(() => historySummaries.length > 0 ? {
+    attention: historySummaries.reduce((s, h) => s + h.attention_score, 0) / historySummaries.length,
+    approvalRate: historySummaries.filter(h => h.approved).length / historySummaries.length * 100,
+    frames: historySummaries.reduce((s, h) => s + h.frames_analyzed, 0) / historySummaries.length,
+  } : null, [historySummaries])
+
+  const toggleHistorySelection = (id: string) => {
+    setSelectedHistoryIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const exitHistoryEditMode = () => {
+    setHistoryEditMode(false)
+    setSelectedHistoryIds(new Set())
+  }
+
+  const deleteSelectedEntries = async () => {
+    if (selectedHistoryIds.size === 0) return
+    setIsDeletingHistory(true)
+    const ids = Array.from(selectedHistoryIds)
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`${DIAGNOSTICS_API_BASE}/${id}`, { method: 'DELETE', headers: apiHeaders() }).catch(() => null)
+      )
+    )
+    setHistorySummaries((prev) => prev.filter((s) => !selectedHistoryIds.has(s.request_id)))
+    exitHistoryEditMode()
+    setIsDeletingHistory(false)
+  }
+
+  const backupSelectedEntries = async () => {
+    if (selectedHistoryIds.size === 0) return
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    const ids = Array.from(selectedHistoryIds)
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const r = await fetch(`${DIAGNOSTICS_API_BASE}/${id}`, { headers: apiHeaders() })
+          if (!r.ok) return
+          const data = await r.json()
+          const entry = historySummaries.find((s) => s.request_id === id)
+          const name = entry ? entry.filename.replace(/\.[^.]+$/, '') : id.slice(0, 8)
+          zip.file(`${name}_${id.slice(0, 8)}.json`, JSON.stringify(data, null, 2))
+        } catch { /* skip failed entries */ }
+      })
+    )
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tribe_backup_${new Date().toISOString().slice(0, 10)}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const loadAbResult = async (id: string, side: 'a' | 'b') => {
+    if (!id) return
+    side === 'a' ? setAbLoadingA(true) : setAbLoadingB(true)
+    try {
+      const r = await fetch(`${DIAGNOSTICS_API_BASE}/${id}`, { headers: apiHeaders() })
+      if (!r.ok) throw new Error()
+      const data: DiagnosticResult = await r.json()
+      side === 'a' ? setAbResultA(data) : setAbResultB(data)
+    } catch { setErrorMessage('Failed to load result.') }
+    finally { side === 'a' ? setAbLoadingA(false) : setAbLoadingB(false) }
+  }
 
   useEffect(() => {
     return () => {
@@ -833,9 +1539,10 @@ export default function DashboardPage() {
     }
 
     const mapped: Array<{ key: BrainRegionKey; value: number }> = [
-      { key: 'visual', value: diagnosticResult.region_activations['Visual Cortex (V1-V4)'] ?? 0 },
-      { key: 'temporal', value: diagnosticResult.region_activations['Auditory Cortex (Temporal)'] ?? 0 },
-      { key: 'frontal', value: diagnosticResult.region_activations['Prefrontal Cortex (Attention)'] ?? 0 },
+      { key: 'visual',    value: diagnosticResult.region_activations['Visual Cortex (V1-V4)'] ?? 0 },
+      { key: 'temporal',  value: diagnosticResult.region_activations['Auditory Cortex (Temporal)'] ?? 0 },
+      { key: 'frontal',   value: diagnosticResult.region_activations['Prefrontal Cortex (Attention)'] ?? 0 },
+      { key: 'emotional', value: diagnosticResult.region_activations['Amygdala (Emotional)'] ?? 0 },
     ]
 
     return mapped.sort((left, right) => right.value - left.value).map((entry) => entry.key)
@@ -864,6 +1571,20 @@ export default function DashboardPage() {
     [frameMarkers]
   )
 
+  const activeHeatmap = useMemo(() => {
+    if (!diagnosticResult) return null
+    if (isStaticImage) return diagnosticResult.frame_insights[0]?.attention_map ?? null
+    if (activeMarkerIndex === null) return null
+    const insight = diagnosticResult.frame_insights.find((f) => f.frame_index === activeMarkerIndex)
+    return insight?.attention_map ?? null
+  }, [activeMarkerIndex, diagnosticResult, isStaticImage])
+
+  const activeHeatmapType = useMemo(() => {
+    if (activeMarkerIndex === null) return null
+    const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
+    return m?.type ?? null
+  }, [activeMarkerIndex, frameMarkers])
+
   const reviewSummary = useMemo(() => {
     const decisions = Object.values(reviewDecisions)
 
@@ -874,29 +1595,45 @@ export default function DashboardPage() {
   }, [reviewDecisions])
 
   const regionMetrics = useMemo(() => {
+    const colorMap = {
+      visual:    BRAIN_REGIONS.find(r => r.key === 'Visual Cortex (V1-V4)')?.color ?? '#3B82F6',
+      temporal:  BRAIN_REGIONS.find(r => r.key === 'Auditory Cortex (Temporal)')?.color ?? '#F59E0B',
+      frontal:   BRAIN_REGIONS.find(r => r.key === 'Prefrontal Cortex (Attention)')?.color ?? '#E85D64',
+      emotional: BRAIN_REGIONS.find(r => r.key === 'Amygdala (Emotional)')?.color ?? '#8B5CF6',
+    }
     if (!diagnosticResult) {
       return [
-        { name: 'Visual (V1)', value: activation * 90 + 10, key: 'visual' as BrainRegionKey },
-        { name: 'Temporal (Audio)', value: activation * 75 + 12, key: 'temporal' as BrainRegionKey },
-        { name: 'Frontal (Attention)', value: activation * 85 + 8, key: 'frontal' as BrainRegionKey },
+        { name: 'Frontal (Attention)', value: null, key: 'frontal'   as BrainRegionKey, color: colorMap.frontal },
+        { name: 'Visual (V1)',         value: null, key: 'visual'    as BrainRegionKey, color: colorMap.visual },
+        { name: 'Temporal (Audio)',    value: null, key: 'temporal'  as BrainRegionKey, color: colorMap.temporal },
+        { name: 'Emotional',           value: null, key: 'emotional' as BrainRegionKey, color: colorMap.emotional },
       ]
     }
 
     return [
       {
+        name: 'Frontal (Attention)',
+        value: (diagnosticResult.region_activations['Prefrontal Cortex (Attention)'] ?? 0) * 100,
+        key: 'frontal' as BrainRegionKey,
+        color: colorMap.frontal,
+      },
+      {
         name: 'Visual (V1)',
         value: (diagnosticResult.region_activations['Visual Cortex (V1-V4)'] ?? 0) * 100,
         key: 'visual' as BrainRegionKey,
+        color: colorMap.visual,
       },
       {
         name: 'Temporal (Audio)',
         value: (diagnosticResult.region_activations['Auditory Cortex (Temporal)'] ?? 0) * 100,
         key: 'temporal' as BrainRegionKey,
+        color: colorMap.temporal,
       },
       {
-        name: 'Frontal (Attention)',
-        value: (diagnosticResult.region_activations['Prefrontal Cortex (Attention)'] ?? 0) * 100,
-        key: 'frontal' as BrainRegionKey,
+        name: 'Emotional',
+        value: (diagnosticResult.region_activations['Amygdala (Emotional)'] ?? 0) * 100,
+        key: 'emotional' as BrainRegionKey,
+        color: colorMap.emotional,
       },
     ]
   }, [activation, diagnosticResult])
@@ -915,17 +1652,23 @@ export default function DashboardPage() {
         panelTitle: 'Neural Insights',
         icon: BarChart3,
       },
-      registry: {
-        title: 'Sample Registry',
-        eyebrow: 'Upload and analysis state',
-        panelTitle: 'Sample Registry',
-        icon: Layers,
-      },
       config: {
         title: 'System Config',
         eyebrow: 'Runtime and endpoint controls',
         panelTitle: 'System Config',
         icon: Settings,
+      },
+      history: {
+        title: 'Diagnostic History',
+        eyebrow: 'Past runs — click to reload',
+        panelTitle: 'History',
+        icon: Clock,
+      },
+      lifecycle: {
+        title: 'Creative Lifecycle',
+        eyebrow: 'Benchmark & A/B comparison',
+        panelTitle: 'Lifecycle',
+        icon: TrendingUp,
       },
     }
 
@@ -952,7 +1695,7 @@ export default function DashboardPage() {
 
   const uploadVideo = async () => {
     if (!selectedFile) {
-      setErrorMessage('Select a video file before uploading.')
+      setErrorMessage('Select a video or image file before uploading.')
       return null
     }
 
@@ -990,7 +1733,7 @@ export default function DashboardPage() {
     try {
       const response = await fetch(`${DIAGNOSTICS_API_BASE}/analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           request_id: currentUpload.request_id,
           frame_rate: frameRate,
@@ -1027,7 +1770,8 @@ export default function DashboardPage() {
 
     setErrorMessage(null)
     setInfoMessage('Preparing PDF export.')
-    await createDiagnosticPdf(diagnosticResult, reviewDecisions)
+    const creative = await captureCreativeDataUrl(previewUrl, isStaticImage, selectedFile?.name ?? uploadResult?.filename)
+    await createDiagnosticPdf(diagnosticResult, reviewDecisions, frameMarkers, markerDecisions, markerNotes, creative)
     setInfoMessage('PDF report exported.')
   }
 
@@ -1069,6 +1813,33 @@ export default function DashboardPage() {
     setActiveSection(section)
     setErrorMessage(null)
     setInfoMessage(null)
+    if (section === 'history' || section === 'lifecycle') {
+      setIsLoadingHistory(true)
+      fetch(DIAGNOSTICS_API_BASE, { headers: apiHeaders() })
+        .then((r) => r.json())
+        .then((data: HistorySummary[]) => setHistorySummaries(data))
+        .catch(() => setErrorMessage('Could not load history. Is the backend running?'))
+        .finally(() => setIsLoadingHistory(false))
+    }
+  }
+
+  const loadHistoryEntry = async (requestId: string) => {
+    setErrorMessage(null)
+    setInfoMessage('Loading past diagnostic…')
+    try {
+      const response = await fetch(`${DIAGNOSTICS_API_BASE}/${requestId}`, { headers: apiHeaders() })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data: DiagnosticResult = await response.json()
+      setDiagnosticResult(data)
+      setActivation(Math.max(0.18, Math.min(1, data.attention_score / 100)))
+      setRegion(getPrimaryRegion(data.region_activations))
+      setMarkerDecisions({})
+      setMarkerNotes({})
+      setActiveSection('diagnostics')
+      setInfoMessage(`Loaded: ${requestId.slice(0, 8)}…`)
+    } catch {
+      setErrorMessage('Failed to load diagnostic result.')
+    }
   }
 
   const openVoxelView = () => {
@@ -1138,9 +1909,13 @@ export default function DashboardPage() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-black selection:bg-seedtag-coral/30">
-      <BrainViewer activationLevel={activation} activeRegion={region} />
-
-      <div className="ui-layer flex w-full h-full">
+      {/* Decorative brain — root level, behind everything, never intercepts events */}
+      {activeSection !== 'insights' && (
+        <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.18]" style={{ pointerEvents: 'none' }}>
+          <BrainViewer decorative activationLevel={0.25} />
+        </div>
+      )}
+      <div className="ui-layer flex w-full h-full" style={{ position: 'relative', zIndex: 1 }}>
         <motion.aside 
           initial={{ x: -100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -1148,11 +1923,14 @@ export default function DashboardPage() {
           className="w-64 glass-panel m-4 flex flex-col p-6 h-[calc(100vh-32px)] border-white/5"
         >
           <div className="flex items-center gap-2 mb-10 px-2 cursor-pointer" onClick={() => window.location.reload()}>
-            <div className="w-10 h-10 bg-seedtag-coral rounded-xl flex items-center justify-center shadow-lg shadow-seedtag-coral/20">
-              <Brain size={24} className="text-white" />
+            <div className="w-10 h-10 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/seedtag-icon.svg" alt="Seedtag icon" className="w-9 h-9" />
             </div>
             <div>
-              <h1 className="text-xl font-serif italic leading-none">Neural<span className="text-seedtag-coral">Seed</span></h1>
+              <h1 className="text-[28px] leading-none" style={{ fontFamily: 'var(--font-instrument-serif)', fontStyle: 'italic', letterSpacing: '0.04em' }}>
+                Neural<span className="text-seedtag-coral">Seed</span>
+              </h1>
               <span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-1 block">Predictive Foundation</span>
             </div>
           </div>
@@ -1171,16 +1949,22 @@ export default function DashboardPage() {
               onClick={() => openSection('insights')}
             />
             <SidebarItem
-              icon={Layers}
-              label="Sample Registry"
-              active={activeSection === 'registry'}
-              onClick={() => openSection('registry')}
-            />
-            <SidebarItem
               icon={Settings}
               label="System Config"
               active={activeSection === 'config'}
               onClick={() => openSection('config')}
+            />
+            <SidebarItem
+              icon={Clock}
+              label="History"
+              active={activeSection === 'history'}
+              onClick={() => openSection('history')}
+            />
+            <SidebarItem
+              icon={TrendingUp}
+              label="Lifecycle"
+              active={activeSection === 'lifecycle'}
+              onClick={() => openSection('lifecycle')}
             />
           </nav>
 
@@ -1242,6 +2026,13 @@ export default function DashboardPage() {
                   + New Creative
                 </button>
               )}
+              <button
+                type="button"
+                onClick={downloadUserGuide}
+                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-bold text-gray-400 transition-all hover:bg-white/10 hover:text-white flex items-center justify-center gap-2"
+              >
+                <Download size={12} /> User Guide
+              </button>
             </div>
           </div>
         </motion.aside>
@@ -1285,12 +2076,103 @@ export default function DashboardPage() {
           </header>
 
           <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar px-4 pb-6 pt-2 gap-3">
+
+            {/* Neural Insights — BrainViewer fills center */}
+            {activeSection === 'insights' && (() => {
+              const conclusion = buildBrainConclusion(diagnosticResult)
+              const dominantKey = Object.entries(diagnosticResult?.region_activations ?? {}).sort((a, b) => b[1] - a[1])[0]?.[0]
+              const conclusionColor = BRAIN_REGIONS.find(r => r.key === dominantKey)?.color ?? '#E85D64'
+              return (
+                <div className="flex-1 rounded-xl overflow-hidden relative" style={{ minHeight: '420px' }}>
+                  <BrainViewer
+                    activationLevel={activation}
+                    activeRegion={region}
+                    regionActivations={diagnosticResult?.region_activations ?? undefined}
+                    approved={diagnosticResult?.final_decision.approved ?? null}
+                    highlightRegion={hoveredRegion ?? undefined}
+                    onRegionHover={setHoveredRegion}
+                    regionDetails={buildRegionDetails(diagnosticResult)}
+                  />
+
+                  {/* "+" trigger — center of brain */}
+                  {conclusion && !showConclusion && (
+                    <button
+                      type="button"
+                      onClick={() => setShowConclusion(true)}
+                      title="Show neural conclusion"
+                      style={{
+                        position: 'absolute',
+                        left: '50%', top: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 30,
+                        width: 44, height: 44,
+                        borderRadius: '50%',
+                        border: `1.5px solid ${conclusionColor}70`,
+                        background: `rgba(5,5,5,0.7)`,
+                        backdropFilter: 'blur(8px)',
+                        color: conclusionColor,
+                        fontSize: 30,
+                        fontWeight: 300,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer',
+                        boxShadow: `0 0 18px ${conclusionColor}40`,
+                        transition: 'all 0.2s',
+                      }}
+                    >+</button>
+                  )}
+
+                  {/* Conclusion overlay */}
+                  {showConclusion && conclusion && (
+                    <div style={{
+                      position: 'absolute', inset: 0, zIndex: 30,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'rgba(5,5,5,0.82)',
+                      backdropFilter: 'blur(16px)',
+                      borderRadius: 12,
+                      padding: 32,
+                    }}>
+                      <div style={{ maxWidth: 420, width: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                          <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: conclusionColor }}>Neural Conclusion</p>
+                          <button
+                            type="button"
+                            onClick={() => setShowConclusion(false)}
+                            style={{ color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}
+                          >✕</button>
+                        </div>
+                        <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', lineHeight: 1.3, marginBottom: 12 }}>{conclusion.headline}</p>
+                        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, marginBottom: 16 }}>{conclusion.body}</p>
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}>
+                          <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(251,191,36,0.7)', marginBottom: 6 }}>Action</p>
+                          <p style={{ fontSize: 13, color: 'rgba(251,191,36,0.9)', lineHeight: 1.6 }}>{conclusion.action}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="w-[70%] mx-auto bg-black"
+              className={`w-[70%] mx-auto rounded-2xl backdrop-blur-xl bg-black/60 ring-1 ring-white/[0.06] ${activeSection !== 'diagnostics' ? 'hidden' : ''}`}
             >
+              {isStaticImage && previewUrl ? (
+                <StaticImageViewer
+                  imageUrl={previewUrl}
+                  heatmap={heatmapEnabled ? activeHeatmap : null}
+                  isAnalyzing={isAnalyzing}
+                  isDone={Boolean(diagnosticResult)}
+                  selectedFileName={selectedFile?.name ?? null}
+                  onSelectFile={selectFile}
+                  onUpload={uploadVideo}
+                  onAnalyze={analyzeCreative}
+                  canAnalyze={Boolean(uploadResult?.request_id || selectedFile)}
+                  onReset={resetSession}
+                />
+              ) : (
               <VideoCortex
                 onTimeUpdate={handleTimeUpdate}
                 videoUrl={previewUrl}
@@ -1307,18 +2189,21 @@ export default function DashboardPage() {
                 isDone={Boolean(diagnosticResult)}
                 onReset={resetSession}
                 analysisDepth={analysisDepth}
-                onDepthChange={(d) => setAnalysisProfile(d, d === 'quick' ? 1 : d === 'deep' ? 3 : 2)}
+                onDepthChange={(d) => setAnalysisProfile(d, d === 'quick' ? 1 : d === 'deep' ? 3 : d === 'ultra' ? 6 : 2)}
                 formatType={formatType}
                 onFormatChange={setFormatType}
                 markers={timelineMarkers}
                 activeMarkerIndex={activeMarkerIndex}
                 onMarkerClick={handleMarkerClick}
                 seekTarget={videoSeekTarget}
+                heatmap={heatmapEnabled ? activeHeatmap : null}
+                heatmapType={activeHeatmapType}
               />
+              )}
             </motion.div>
 
             {/* Marker info panel — always in DOM when diagnostic has markers, no layout jump */}
-            {diagnosticResult && frameMarkers.length > 0 && (() => {
+            {activeSection === 'diagnostics' && diagnosticResult && frameMarkers.length > 0 && (() => {
               const m = activeMarkerIndex !== null
                 ? frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex) ?? null
                 : null
@@ -1390,7 +2275,7 @@ export default function DashboardPage() {
             })()}
 
             {/* Attention Timeline Chart — below marker panel, above stat cards */}
-            {diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
+            {activeSection === 'diagnostics' && diagnosticResult && diagnosticResult.frame_insights.length >= 2 && (
               <AttentionChart
                 frames={diagnosticResult.frame_insights}
                 markers={timelineMarkers}
@@ -1400,38 +2285,489 @@ export default function DashboardPage() {
             )}
 
             {/* Stat cards */}
+            {activeSection === 'diagnostics' && (
             <div className="grid grid-cols-3 gap-4">
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
                 <StatCard
-                  title="Attention Prediction"
-                  value={`${(diagnosticResult?.attention_score ?? activation * 100).toFixed(1)}`}
-                  unit="%"
-                  trend={diagnosticResult ? `${diagnosticResult.frames_analyzed} Frames` : 'Awaiting Upload'}
+                  title="Attention Score"
+                  value={diagnosticResult ? `${diagnosticResult.attention_score.toFixed(1)}` : '—'}
+                  unit={diagnosticResult ? '%' : ''}
+                  trend={diagnosticResult ? `${diagnosticResult.frames_analyzed} Frames` : 'Run a diagnostic'}
                   icon={Target}
                   info={RESULT_EXPLAINERS.attention}
+                  badge={diagnosticResult ? {
+                    text: diagnosticResult.attention_score >= 70 ? 'Strong' : diagnosticResult.attention_score >= 40 ? 'Moderate' : 'Low',
+                    variant: diagnosticResult.attention_score >= 70 ? 'green' : diagnosticResult.attention_score >= 40 ? 'amber' : 'red',
+                  } : undefined}
                 />
               </motion.div>
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
                 <StatCard
-                  title="Neural Resonance"
-                  value={`${(diagnosticResult?.neural_resonance ?? 0.8 + activation * 0.2).toFixed(2)}`}
-                  unit="Index"
-                  trend={diagnosticResult ? `${(diagnosticResult.sensory_load * 100).toFixed(1)}% Load` : 'Simulated'}
+                  title="Emotional Impact"
+                  value={diagnosticResult ? `${(diagnosticResult.neural_resonance * 100).toFixed(0)}` : '—'}
+                  unit={diagnosticResult ? '%' : ''}
+                  trend={diagnosticResult ? `${(diagnosticResult.sensory_load * 100).toFixed(1)}% Sensory Load` : 'Run a diagnostic'}
                   icon={Zap}
                   info={RESULT_EXPLAINERS.resonance}
+                  badge={diagnosticResult ? {
+                    text: diagnosticResult.neural_resonance >= 0.65 ? 'Strong' : diagnosticResult.neural_resonance >= 0.40 ? 'Moderate' : 'Low',
+                    variant: diagnosticResult.neural_resonance >= 0.65 ? 'green' : diagnosticResult.neural_resonance >= 0.40 ? 'amber' : 'red',
+                  } : undefined}
                 />
               </motion.div>
               <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
                 <StatCard
-                  title="Strategy Category"
-                  value={diagnosticResult?.final_decision.strategy_category ?? region.toUpperCase()}
+                  title="Creative Type"
+                  value={diagnosticResult?.final_decision.strategy_category ?? '—'}
                   unit=""
-                  trend={diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Needs Revision') : 'Processing'}
+                  trend={diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Needs Revision') : 'Run a diagnostic'}
                   icon={Brain}
                   info={RESULT_EXPLAINERS.strategy}
+                  badge={diagnosticResult ? {
+                    text: diagnosticResult.final_decision.approved ? 'Approved' : 'Revision',
+                    variant: diagnosticResult.final_decision.approved ? 'green' : 'amber',
+                  } : undefined}
                 />
               </motion.div>
             </div>
+            )}
+
+            {/* Lifecycle expanded center view */}
+            {activeSection === 'lifecycle' && (
+              <div className="flex-1 space-y-4">
+                <div className="flex rounded-lg border border-white/10 overflow-hidden">
+                  {(['benchmark', 'ab'] as const).map((tab) => (
+                    <button key={tab} type="button" onClick={() => setLifecycleTab(tab)}
+                      className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${
+                        lifecycleTab === tab ? 'bg-seedtag-coral text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                      }`}>
+                      {tab === 'benchmark' ? 'Benchmark' : 'A/B Compare'}
+                    </button>
+                  ))}
+                </div>
+
+                {lifecycleTab === 'ab' ? (
+                  abResultA && abResultB ? (
+                    <div className="space-y-4">
+                      {/* Winner banner */}
+                      {(() => {
+                        const aScore = abResultA.attention_score
+                        const bScore = abResultB.attention_score
+                        const winner = aScore > bScore ? 'A' : bScore > aScore ? 'B' : null
+                        const winnerColor = winner === 'A' ? 'text-seedtag-coral' : 'text-blue-400'
+                        return winner ? (
+                          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Winner by Attention</p>
+                              <p className={`text-2xl font-bold ${winnerColor}`}>Creative {winner}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-gray-500 mb-1">Δ Attention</p>
+                              <p className="text-xl font-bold text-white">+{Math.abs(aScore - bScore).toFixed(1)}%</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-center">
+                            <p className="text-sm font-bold text-gray-400">Tie — identical attention scores</p>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Side-by-side cards */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {([abResultA, abResultB] as const).map((r, i) => {
+                          const label = i === 0 ? 'A' : 'B'
+                          const accent = i === 0 ? 'text-seedtag-coral' : 'text-blue-400'
+                          const barColor = i === 0 ? 'bg-seedtag-coral' : 'bg-blue-400'
+                          const metrics = [
+                            { label: 'Attention', value: r.attention_score, max: 100 },
+                            { label: 'Resonance', value: r.neural_resonance * 100, max: 100 },
+                            { label: 'Confidence', value: r.prediction_confidence * 100, max: 100 },
+                            { label: 'Sensory Load', value: r.sensory_load * 100, max: 100 },
+                            { label: 'Brand Voice', value: r.hybrid_flags.brand_voice_score * 100, max: 100 },
+                          ]
+                          return (
+                            <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-sm font-bold uppercase tracking-widest ${accent}`}>Creative {label}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${r.final_decision.approved ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/20' : 'text-red-400 bg-red-400/10 border border-red-400/20'}`}>
+                                  {r.final_decision.approved ? 'Approved' : 'Revision'}
+                                </span>
+                              </div>
+                              <div className="space-y-3">
+                                {metrics.map((m) => (
+                                  <div key={m.label}>
+                                    <div className="flex justify-between text-[10px] mb-1">
+                                      <span className="text-gray-400">{m.label}</span>
+                                      <span className="font-bold text-white">{m.value.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-white/5 rounded-full">
+                                      <div className={`h-1.5 rounded-full ${barColor} transition-all`} style={{ width: `${Math.min(m.value, 100)}%` }} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="pt-3 border-t border-white/10">
+                                <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1">Strategy</p>
+                                <p className="text-sm font-bold text-white">{r.final_decision.strategy_category}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Detailed comparison table */}
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-3">Full Comparison</p>
+                        <div className="grid grid-cols-3 gap-3 mb-2">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Metric</span>
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral text-center">A</span>
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-blue-400 text-center">B</span>
+                        </div>
+                        <AbMetricRow label="Attention %" valA={abResultA.attention_score} valB={abResultB.attention_score} />
+                        <AbMetricRow label="Resonance" valA={abResultA.neural_resonance * 100} valB={abResultB.neural_resonance * 100} />
+                        <AbMetricRow label="Confidence" valA={abResultA.prediction_confidence * 100} valB={abResultB.prediction_confidence * 100} />
+                        <AbMetricRow label="Sensory load" valA={abResultA.sensory_load * 100} valB={abResultB.sensory_load * 100} higherIsBetter={false} />
+                        <AbMetricRow label="Brand voice" valA={abResultA.hybrid_flags.brand_voice_score * 100} valB={abResultB.hybrid_flags.brand_voice_score * 100} />
+                        <div className="grid grid-cols-3 gap-2 items-center pt-2 mt-1 border-t border-white/10">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Decision</span>
+                          <span className={`text-center text-[10px] font-bold ${abResultA.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {abResultA.final_decision.approved ? 'Approved' : 'Revision'}
+                          </span>
+                          <span className={`text-center text-[10px] font-bold ${abResultB.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {abResultB.final_decision.approved ? 'Approved' : 'Revision'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                      <TrendingUp size={36} className="text-gray-600" />
+                      <p className="text-sm font-bold text-gray-400">Select and load two creatives</p>
+                      <p className="text-xs text-gray-600">Use the panel on the right to pick Creative A and B</p>
+                    </div>
+                  )
+                ) : (
+                  /* Benchmark tab */
+                  !diagnosticResult ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                      <Activity size={36} className="text-gray-600" />
+                      <p className="text-sm font-bold text-gray-400">No current diagnostic</p>
+                      <p className="text-xs text-gray-600">Run an analysis first to compare against history.</p>
+                    </div>
+                  ) : histAvg === null ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                      <Activity size={36} className="text-gray-600" />
+                      <p className="text-sm font-bold text-gray-400">No history yet</p>
+                      <p className="text-xs text-gray-600">Run more analyses to build a benchmark baseline.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        {[
+                          { label: 'Attention Score', current: diagnosticResult.attention_score, avg: histAvg.attention, unit: '%' },
+                          { label: 'Approval Rate', current: diagnosticResult.final_decision.approved ? 100 : 0, avg: histAvg.approvalRate, unit: '%' },
+                          { label: 'Frames Analyzed', current: diagnosticResult.frames_analyzed, avg: histAvg.frames, unit: '' },
+                        ].map(({ label, current, avg, unit }) => {
+                          const delta = current - avg
+                          const good = delta >= 0
+                          return (
+                            <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-3">{label}</p>
+                              <p className="text-3xl font-bold text-white">{current.toFixed(1)}<span className="text-base font-normal text-gray-400 ml-1">{unit}</span></p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500">avg {avg.toFixed(1)}{unit}</span>
+                                <span className={`text-[10px] font-bold ${good ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {delta > 0 ? '+' : ''}{delta.toFixed(1)} {good ? '↑' : '↓'}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-4">Strategy Distribution — {historySummaries.length} past run{historySummaries.length !== 1 ? 's' : ''}</p>
+                        <div className="space-y-3">
+                          {Array.from(new Set(historySummaries.map(h => h.strategy_category))).map(cat => {
+                            const count = historySummaries.filter(h => h.strategy_category === cat).length
+                            const pct = (count / historySummaries.length) * 100
+                            const isCurrent = diagnosticResult.final_decision.strategy_category === cat
+                            return (
+                              <div key={cat}>
+                                <div className="flex justify-between text-xs mb-1.5">
+                                  <span className={`font-bold ${isCurrent ? 'text-seedtag-coral' : 'text-gray-300'}`}>
+                                    {cat}{isCurrent ? ' ← current' : ''}
+                                  </span>
+                                  <span className="text-gray-500">{count} run{count !== 1 ? 's' : ''} · {pct.toFixed(0)}%</span>
+                                </div>
+                                <div className="h-2 w-full rounded-full bg-white/10">
+                                  <div className={`h-2 rounded-full transition-all ${isCurrent ? 'bg-seedtag-coral' : 'bg-white/20'}`} style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* ── History — Finder-style center view ── */}
+            {activeSection === 'history' && (
+              <div className="flex-1 flex flex-col gap-4 min-h-0">
+                {/* Toolbar */}
+                <div className="flex items-center justify-between shrink-0">
+                  <p className="text-xs text-gray-500">
+                    {isLoadingHistory ? 'Loading…' : `${historySummaries.length} past run${historySummaries.length !== 1 ? 's' : ''}`}
+                    {historyEditMode && selectedHistoryIds.size > 0 && (
+                      <span className="ml-2 text-seedtag-coral font-bold">· {selectedHistoryIds.size} selected</span>
+                    )}
+                  </p>
+                  {!isLoadingHistory && historySummaries.length > 0 && (
+                    historyEditMode ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedHistoryIds(new Set(historySummaries.map(s => s.request_id)))}
+                          className="text-[10px] font-bold text-gray-400 hover:text-white transition-colors"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={exitHistoryEditMode}
+                          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-gray-300 hover:bg-white/10 transition-all"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setHistoryEditMode(true)}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold text-gray-300 hover:bg-white/10 transition-all"
+                      >
+                        Edit
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center py-24 text-gray-500 text-sm">
+                    <div className="w-6 h-6 border-2 border-seedtag-coral border-t-transparent rounded-full animate-spin mr-3" />
+                    Loading history…
+                  </div>
+                ) : historySummaries.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+                    <Clock size={40} className="text-gray-700" />
+                    <p className="text-sm font-bold text-gray-400">No past diagnostics yet</p>
+                    <p className="text-xs text-gray-600">Run an analysis to start building history.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-3 overflow-y-auto custom-scrollbar pb-20">
+                    {historySummaries.map((entry) => {
+                      const isSelected = selectedHistoryIds.has(entry.request_id)
+                      return (
+                        <div
+                          key={entry.request_id}
+                          className={`relative group rounded-xl border bg-white/[0.02] text-left transition-all overflow-hidden cursor-pointer ${
+                            historyEditMode
+                              ? isSelected
+                                ? 'border-seedtag-coral/60 bg-seedtag-coral/10'
+                                : 'border-white/10 hover:border-white/20'
+                              : 'border-white/10 hover:border-seedtag-coral/40 hover:bg-seedtag-coral/5'
+                          }`}
+                          onClick={() => {
+                            if (historyEditMode) {
+                              toggleHistorySelection(entry.request_id)
+                            } else {
+                              loadHistoryEntry(entry.request_id)
+                              openSection('diagnostics')
+                            }
+                          }}
+                        >
+                          {/* Colored header strip */}
+                          <div className={`h-1.5 w-full ${entry.approved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+
+                          {/* Checkbox overlay (edit mode) */}
+                          {historyEditMode && (
+                            <div className={`absolute top-3 right-3 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all ${
+                              isSelected ? 'border-seedtag-coral bg-seedtag-coral' : 'border-white/30 bg-black/40'
+                            }`}>
+                              {isSelected && <Check size={11} className="text-white" strokeWidth={3} />}
+                            </div>
+                          )}
+
+                          <div className="p-4">
+                            {/* Icon + badge */}
+                            <div className="flex items-start justify-between gap-2 mb-3">
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                                entry.approved ? 'bg-emerald-400/10' : 'bg-amber-400/10'
+                              }`}>
+                                <Film size={18} className={entry.approved ? 'text-emerald-400' : 'text-amber-400'} />
+                              </div>
+                              {!historyEditMode && (
+                                <span className={`rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${
+                                  entry.approved
+                                    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                                    : 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                                }`}>
+                                  {entry.approved ? 'Approved' : 'Revision'}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Filename */}
+                            <p className={`text-xs font-bold truncate leading-snug mb-1 transition-colors ${
+                              historyEditMode ? 'text-white' : 'text-white group-hover:text-seedtag-coral'
+                            }`}>
+                              {entry.filename}
+                            </p>
+
+                            {/* Score + strategy */}
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-sm font-bold text-seedtag-coral">{entry.attention_score.toFixed(0)}%</span>
+                              <span className="text-[10px] text-gray-500 truncate">{entry.strategy_category}</span>
+                            </div>
+
+                            {/* Attention bar */}
+                            <div className="h-1 w-full rounded-full bg-white/10 mb-3">
+                              <div className="h-1 rounded-full bg-seedtag-coral/60" style={{ width: `${Math.min(entry.attention_score, 100)}%` }} />
+                            </div>
+
+                            {/* Footer meta */}
+                            <div className="flex items-center justify-between text-[9px] text-gray-600">
+                              <span>{entry.frames_analyzed} frames</span>
+                              <span>{new Date(entry.analyzed_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Floating action bar */}
+                {historyEditMode && selectedHistoryIds.size > 0 && (
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111]/95 px-5 py-3 shadow-2xl backdrop-blur-md">
+                    <span className="text-xs font-bold text-white">
+                      {selectedHistoryIds.size} run{selectedHistoryIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <div className="h-4 w-px bg-white/10" />
+                    <button
+                      type="button"
+                      onClick={backupSelectedEntries}
+                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-gray-200 transition-all hover:bg-white/10"
+                    >
+                      <Download size={13} /> Backup ZIP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteSelectedEntries}
+                      disabled={isDeletingHistory}
+                      className="flex items-center gap-2 rounded-lg border border-red-400/30 bg-red-400/15 px-4 py-2 text-xs font-bold text-red-200 transition-all hover:bg-red-400/25 disabled:opacity-50"
+                    >
+                      {isDeletingHistory
+                        ? <><div className="w-3 h-3 border border-red-300 border-t-transparent rounded-full animate-spin" /> Deleting…</>
+                        : <><X size={13} /> Delete</>
+                      }
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── System Config — center view ── */}
+            {activeSection === 'config' && (
+              <div className="flex-1 max-w-3xl mx-auto w-full space-y-6 py-2">
+
+                {/* API Endpoint */}
+                <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Server size={14} className="text-seedtag-coral" />
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Diagnostics API</p>
+                  </div>
+                  <p className="font-mono text-sm font-bold text-white break-all">{DIAGNOSTICS_API_BASE}</p>
+                  <p className="mt-2 text-[11px] text-gray-500">Frontend requests upload and analysis through this base URL.</p>
+                </section>
+
+                {/* Runtime — 2-col grid */}
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">Runtime</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Dashboard', value: 'http://127.0.0.1:3005' },
+                      { label: 'Backend Docs', value: 'http://127.0.0.1:8000/docs' },
+                      { label: 'Frame Sampling', value: getFrameBudgetLabel(analysisDepth, frameRate) },
+                      { label: 'Gemini', value: 'Server managed' },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1">{label}</p>
+                        <p className="text-xs font-bold text-white break-all">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Analysis Depth — 4 cards */}
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">Analysis Depth</p>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      { depth: 'quick' as AnalysisDepth, fps: 1, label: 'Quick', detail: 'Fast pass for smoke tests.' },
+                      { depth: 'standard' as AnalysisDepth, fps: 2, label: 'Standard', detail: 'Recommended CTV QA balance.' },
+                      { depth: 'deep' as AnalysisDepth, fps: 3, label: 'Deep', detail: 'More frames for fast edits.' },
+                      { depth: 'ultra' as AnalysisDepth, fps: 6, label: 'Ultra High', detail: '6 fps — max resolution.' },
+                    ].map((profile) => {
+                      const selected = analysisDepth === profile.depth && frameRate === profile.fps
+                      return (
+                        <button
+                          key={profile.depth}
+                          type="button"
+                          onClick={() => setAnalysisProfile(profile.depth, profile.fps)}
+                          disabled={isUploading || isAnalyzing}
+                          className={`rounded-xl border p-4 text-left transition-all disabled:opacity-50 ${
+                            selected
+                              ? 'border-seedtag-coral/40 bg-seedtag-coral/15'
+                              : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-white">{profile.label}</span>
+                            <span className="text-[10px] font-bold text-seedtag-coral">{profile.fps} fps</span>
+                          </div>
+                          <p className="text-[10px] leading-relaxed text-gray-400">{profile.detail}</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                {/* Controls */}
+                <section>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">Controls</p>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => window.open('http://127.0.0.1:8000/docs', '_blank', 'noopener,noreferrer')}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white transition-all hover:bg-white/10"
+                    >
+                      Open API Docs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetSession}
+                      className="flex-1 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-xs font-bold text-red-100 transition-all hover:bg-red-400/15"
+                    >
+                      Clear Current Session
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
 
             {errorMessage && (
               <div className="glass-card border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
@@ -1504,11 +2840,13 @@ export default function DashboardPage() {
 
         </section>
 
-        <motion.aside 
+        <motion.aside
           initial={{ x: 100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="w-[360px] glass-panel m-4 flex flex-col p-6 h-[calc(100vh-32px)] border-white/5"
+          className={`w-[440px] glass-panel m-4 flex flex-col p-6 h-[calc(100vh-32px)] border-white/5 ${
+            ['history', 'config'].includes(activeSection) ? 'hidden' : ''
+          }`}
         >
           <div className="flex items-center justify-between mb-8">
             <h3 className="font-bold flex items-center gap-2">
@@ -1624,19 +2962,23 @@ export default function DashboardPage() {
                       : 'border-red-400/20 bg-red-400/10 text-red-200'
 
                   return (
-                    <div
+                    <FlipCard
                       key={check.label}
-                      className="flex min-h-[64px] flex-col justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
-                    >
-                      <span className="flex items-start gap-1 text-xs font-medium leading-tight text-white">
-                        {check.label}
-                        <InfoTip text={getAutomatedCheckExplanation(check.label)} />
-                      </span>
-                      <span className={`flex items-center justify-center gap-1 rounded border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${statusClass}`}>
-                        {check.passed === null ? <CircleDashed size={12} /> : check.passed ? <Check size={12} /> : <X size={12} />}
-                        {statusLabel}
-                      </span>
-                    </div>
+                      front={
+                        <div className="flex h-[96px] flex-col justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                          <span className="pr-5 text-xs font-medium leading-tight text-white">{check.label}</span>
+                          <span className={`flex items-center justify-center gap-1 rounded border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${statusClass}`}>
+                            {check.passed === null ? <CircleDashed size={12} /> : check.passed ? <Check size={12} /> : <X size={12} />}
+                            {statusLabel}
+                          </span>
+                        </div>
+                      }
+                      back={
+                        <div className="flex h-[96px] flex-col rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2">
+                          <p className="overflow-y-auto pr-5 text-xs leading-relaxed text-gray-200">{getAutomatedCheckExplanation(check.label)}</p>
+                        </div>
+                      }
+                    />
                   )
                 })}
               </div>
@@ -1676,15 +3018,39 @@ export default function DashboardPage() {
                       {Object.keys(markerDecisions).length}/{frameMarkers.length} reviewed
                     </span>
                   </div>
-                  <div className="flex gap-3 text-[10px] text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-full bg-red-500/80" />
-                      {frameMarkers.filter((m) => m.type === 'low-attention').length} low attention
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500/80" />
-                      {frameMarkers.filter((m) => m.type === 'high-load').length} high load
-                    </span>
+                  <div className="flex gap-2 text-[10px] text-gray-400">
+                    <FlipCard
+                      className="flex-1"
+                      front={
+                        <div className="flex items-center gap-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                          <span className="inline-block h-2 w-2 rounded-full bg-red-500/80" />
+                          {frameMarkers.filter((m) => m.type === 'low-attention').length} low attention
+                        </div>
+                      }
+                      back={
+                        <div className="rounded border border-red-400/20 bg-red-400/5 px-2 py-1">
+                          <p className="pr-4 text-[9px] leading-snug text-red-200">
+                            Frames where predicted attention drops below 75. The viewer may disengage at these moments.
+                          </p>
+                        </div>
+                      }
+                    />
+                    <FlipCard
+                      className="flex-1"
+                      front={
+                        <div className="flex items-center gap-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                          <span className="inline-block h-2 w-2 rounded-full bg-amber-500/80" />
+                          {frameMarkers.filter((m) => m.type === 'high-load').length} high load
+                        </div>
+                      }
+                      back={
+                        <div className="rounded border border-amber-400/20 bg-amber-400/5 px-2 py-1">
+                          <p className="pr-4 text-[9px] leading-snug text-amber-200">
+                            Frames with sensory load above 45%. Too much information at once can cause viewer fatigue.
+                          </p>
+                        </div>
+                      }
+                    />
                   </div>
                   {activeMarkerIndex !== null && (() => {
                     const m = frameMarkers.find((fm) => fm.frameIndex === activeMarkerIndex)
@@ -1751,56 +3117,61 @@ export default function DashboardPage() {
                 {hybridReviewItems.map((item) => {
                   const Icon = item.icon
                   const decision = reviewDecisions[item.id]
+                  const rowBorder = item.needsAttention ? 'border-amber-400/25 bg-amber-400/10' : 'border-white/10 bg-white/[0.03]'
 
                   return (
-                    <div
+                    <FlipCard
                       key={item.id}
-                      className={`rounded-lg border p-3 ${
-                        item.needsAttention
-                          ? 'border-amber-400/25 bg-amber-400/10'
-                          : 'border-white/10 bg-white/[0.03]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                          item.needsAttention ? 'bg-amber-400/15 text-amber-200' : 'bg-white/10 text-gray-300'
-                        }`}>
-                          <Icon size={14} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-bold text-white">{item.label}</span>
-                            <span className="shrink-0 text-[10px] font-bold text-seedtag-coral">{item.value}</span>
+                      front={
+                        <div className={`rounded-lg border p-3 ${rowBorder}`}>
+                          <div className="flex items-center gap-2">
+                            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                              item.needsAttention ? 'bg-amber-400/15 text-amber-200' : 'bg-white/10 text-gray-300'
+                            }`}>
+                              <Icon size={14} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1 pr-5">
+                                <span className="text-xs font-bold text-white">{item.label}</span>
+                                <span className="shrink-0 text-[10px] font-bold text-seedtag-coral">{item.value}</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1.5 ml-1">
+                              <button
+                                type="button"
+                                disabled={!diagnosticResult}
+                                onClick={() => setHybridDecision(item.id, 'confirmed')}
+                                className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                                  decision === 'confirmed'
+                                    ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
+                                    : 'border-white/10 bg-white/5 text-gray-400 hover:text-emerald-300'
+                                }`}
+                              >
+                                <Check size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!diagnosticResult}
+                                onClick={() => setHybridDecision(item.id, 'rejected')}
+                                className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                                  decision === 'rejected'
+                                    ? 'border-red-400/40 bg-red-400/20 text-red-100'
+                                    : 'border-white/10 bg-white/5 text-gray-400 hover:text-red-300'
+                                }`}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex gap-1.5 ml-1">
-                          <button
-                            type="button"
-                            disabled={!diagnosticResult}
-                            onClick={() => setHybridDecision(item.id, 'confirmed')}
-                            className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                              decision === 'confirmed'
-                                ? 'border-emerald-400/40 bg-emerald-400/20 text-emerald-100'
-                                : 'border-white/10 bg-white/5 text-gray-400 hover:text-emerald-300'
-                            }`}
-                          >
-                            <Check size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!diagnosticResult}
-                            onClick={() => setHybridDecision(item.id, 'rejected')}
-                            className={`flex h-7 w-7 items-center justify-center rounded border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                              decision === 'rejected'
-                                ? 'border-red-400/40 bg-red-400/20 text-red-100'
-                                : 'border-white/10 bg-white/5 text-gray-400 hover:text-red-300'
-                            }`}
-                          >
-                            <X size={13} />
-                          </button>
+                      }
+                      back={
+                        <div className={`rounded-lg border p-3 ${rowBorder} flex flex-col justify-center min-h-full`}>
+                          <p className="mb-1 pr-5 text-[10px] font-bold uppercase tracking-widest text-gray-500">{item.label}</p>
+                          <p className="pr-5 text-[11px] leading-snug text-gray-200">{HYBRID_EXPLAINERS[item.id]}</p>
                         </div>
-                      </div>
-                    </div>
+                      }
+                    />
                   )
                 })}
               </div>
@@ -1813,22 +3184,34 @@ export default function DashboardPage() {
                   const isActive = metric.key === region || region === 'all'
 
                   return (
-                    <div key={metric.name} className={`flex flex-col gap-2 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-45'}`}>
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-xs font-bold text-white">{metric.name}</span>
-                        <span className="font-mono text-[11px] font-bold text-seedtag-coral">
-                          {metric.value.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full border border-white/5 bg-white/5 p-[1px]">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.max(8, metric.value)}%` }}
-                          transition={{ duration: 0.5 }}
-                          className={`h-full rounded-full ${isActive ? 'bg-seedtag-coral' : 'bg-gray-600'}`}
-                        />
-                      </div>
-                    </div>
+                    <FlipCard
+                      key={metric.name}
+                      front={
+                        <div className={`flex flex-col gap-2 rounded-lg px-2 py-1.5 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-45'}`}>
+                          <div className="flex items-baseline justify-between pr-5">
+                            <span className="text-xs font-bold text-white">{metric.name}</span>
+                            <span className="font-mono text-[11px] font-bold" style={{ color: metric.value !== null ? metric.color : 'rgba(255,255,255,0.2)' }}>
+                              {metric.value !== null ? `${metric.value.toFixed(1)}%` : '—'}
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full border border-white/5 bg-white/5 p-[1px]">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: metric.value !== null ? `${Math.max(8, metric.value)}%` : '0%' }}
+                              transition={{ duration: 0.5 }}
+                              style={{ background: isActive && metric.value !== null ? metric.color : undefined }}
+                              className={`h-full rounded-full ${isActive && metric.value !== null ? '' : 'bg-gray-600'}`}
+                            />
+                          </div>
+                        </div>
+                      }
+                      back={
+                        <div className="rounded-lg px-2 py-1.5">
+                          <p className="mb-1 pr-5 text-[10px] font-bold uppercase tracking-widest text-gray-500">{metric.name}</p>
+                          <p className="pr-5 text-[11px] leading-snug text-gray-200">{REGION_EXPLAINERS[metric.name] ?? RESULT_EXPLAINERS.neural}</p>
+                        </div>
+                      }
+                    />
                   )
                 })}
               </div>
@@ -1860,46 +3243,44 @@ export default function DashboardPage() {
                   </div>
                 </section>
 
-                <BrainActivationMap
-                  activeRegion={region}
-                  activationLevel={activation}
-                  activations={diagnosticResult?.region_activations}
-                />
-
-                <section className="space-y-3">
-                  <SectionHeading title="Region Signals" info={RESULT_EXPLAINERS.neural} />
-                  <div className="space-y-3">
-                    {regionMetrics.map((metric) => {
-                      const isActive = metric.key === region || region === 'all'
-
-                      return (
-                        <button
-                          key={metric.name}
-                          type="button"
-                          onClick={() => {
-                            setRegion(metric.key)
-                            setActivation(Math.max(0.18, Math.min(1, metric.value / 100)))
-                          }}
-                          className={`flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-all ${
-                            isActive
-                              ? 'border-seedtag-coral/35 bg-seedtag-coral/10'
-                              : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
-                          }`}
-                        >
-                          <div className="flex items-baseline justify-between">
-                            <span className="text-xs font-bold text-white">{metric.name}</span>
-                            <span className="font-mono text-[11px] font-bold text-seedtag-coral">
-                              {metric.value.toFixed(1)}%
-                            </span>
+                {/* ── Recommendations ─────────────────────────── */}
+                {(() => {
+                  const rec = buildRegionRecommendations(diagnosticResult)
+                  if (!rec) return null
+                  return (
+                    <section className="space-y-2">
+                      <SectionHeading title="Recommendations" info="Actionable insights derived from region activations." />
+                      <div className="space-y-2">
+                        {rec.working.length > 0 && (
+                          <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/8 p-3 space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">What's working</p>
+                            {rec.working.map(w => (
+                              <p key={w.label} className="text-xs text-gray-300 leading-snug">
+                                <span className="font-semibold text-white">{w.label} — </span>{w.reason}
+                              </p>
+                            ))}
                           </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                            <div className="h-full rounded-full bg-seedtag-coral transition-all duration-300" style={{ width: `${Math.max(8, metric.value)}%` }} />
+                        )}
+                        {rec.failing.length > 0 && (
+                          <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">What's failing</p>
+                            {rec.failing.map(f => (
+                              <p key={f.label} className="text-xs text-gray-300 leading-snug">
+                                <span className="font-semibold text-white">{f.label} — </span>{f.reason}
+                              </p>
+                            ))}
                           </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </section>
+                        )}
+                        {rec.action && (
+                          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">What to fix</p>
+                            <p className="text-xs text-gray-200 leading-snug">{rec.action.tip}</p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  )
+                })()}
 
                 <section className="space-y-3">
                   <SectionHeading
@@ -1926,21 +3307,11 @@ export default function DashboardPage() {
                     }
                   />
                   <div className="space-y-2">
-                    {(diagnosticResult?.frame_insights ?? []).slice(0, 10).map((frame) => (
+                    {(diagnosticResult?.frame_insights ?? []).map((frame) => (
                       <button
                         key={`${frame.frame_index}-${frame.timestamp_seconds}`}
                         type="button"
-                        onClick={() => {
-                          const regionKey: BrainRegionKey = frame.dominant_region.includes('Visual')
-                            ? 'visual'
-                            : frame.dominant_region.includes('Temporal')
-                              ? 'temporal'
-                              : frame.dominant_region.includes('Prefrontal')
-                                ? 'frontal'
-                                : 'all'
-                          setRegion(regionKey)
-                          setActivation(Math.max(0.18, Math.min(1, frame.attention_score / 100)))
-                        }}
+                        onClick={() => setSelectedFrame(frame)}
                         className="w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-left transition-all hover:border-seedtag-coral/30 hover:bg-seedtag-coral/10"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -1963,74 +3334,193 @@ export default function DashboardPage() {
                   </div>
                 </section>
               </>
-            ) : activeSection === 'registry' ? (
+            ) : activeSection === 'history' ? (
               <>
-                <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Current Sample</p>
-                    <InfoTip text={RESULT_EXPLAINERS.registry} />
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center py-12 text-gray-500 text-sm">Loading history…</div>
+                ) : historySummaries.length === 0 ? (
+                  <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+                    <Clock size={28} className="mx-auto mb-3 text-gray-600" />
+                    <p className="text-sm font-bold text-gray-400">No past diagnostics yet</p>
+                    <p className="mt-1 text-xs text-gray-600">Run an analysis to start building history.</p>
                   </div>
-                  <p className="mt-2 break-words text-sm font-bold text-white">
-                    {selectedFile?.name ?? uploadResult?.filename ?? 'No creative selected'}
-                  </p>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-black/20 p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Upload</p>
-                      <p className="mt-1 text-xs font-bold text-white">{uploadResult ? 'Ready' : selectedFile ? 'Local' : 'Empty'}</p>
-                    </div>
-                    <div className="rounded-lg bg-black/20 p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Analysis</p>
-                      <p className="mt-1 text-xs font-bold text-white">{diagnosticResult ? 'Complete' : 'Pending'}</p>
-                    </div>
+                ) : (
+                  <div className="space-y-2">
+                    {historySummaries.map((entry) => (
+                      <button
+                        key={entry.request_id}
+                        type="button"
+                        onClick={() => loadHistoryEntry(entry.request_id)}
+                        className="w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-left transition-all hover:border-seedtag-coral/30 hover:bg-seedtag-coral/5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate text-xs font-bold text-white">{entry.filename}</p>
+                          <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                            entry.approved
+                              ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                              : 'border-red-400/20 bg-red-400/10 text-red-300'
+                          }`}>
+                            {entry.approved ? 'Approved' : 'Revision'}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-3 text-[10px] text-gray-500">
+                          <span className="text-seedtag-coral font-bold">{entry.attention_score.toFixed(1)}%</span>
+                          <span>{entry.strategy_category}</span>
+                          <span>{entry.frames_analyzed} frames</span>
+                        </div>
+                        <p className="mt-1 text-[9px] text-gray-600">
+                          {new Date(entry.analyzed_at).toLocaleString()}
+                        </p>
+                      </button>
+                    ))}
                   </div>
-                </section>
-
-                <section className="space-y-3">
-                  <SectionHeading title="Request Details" info={RESULT_EXPLAINERS.registry} />
-                  {[
-                    ['Request ID', diagnosticResult?.request_id ?? uploadResult?.request_id ?? 'Not created'],
-                    ['Frames', diagnosticResult ? `${diagnosticResult.frames_analyzed}` : 'Not analyzed'],
-                    ['Sampling', getFrameBudgetLabel(analysisDepth, frameRate)],
-                    ['Decision', diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Revisions required') : 'Pending'],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">{label}</p>
-                      <p className="mt-1 break-words text-xs font-bold text-white">{value}</p>
-                    </div>
-                  ))}
-                </section>
-
-                <section className="space-y-3">
-                  <SectionHeading
-                    title="Sample Actions"
-                    info="Actions for the current creative: upload, rerun analysis, or export the formatted diagnostic report."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => uploadVideo()}
-                    disabled={!selectedFile || isUploading || isAnalyzing}
-                    className="w-full rounded-lg border border-seedtag-coral/30 bg-seedtag-coral/15 px-4 py-3 text-xs font-bold text-white transition-all hover:bg-seedtag-coral/25 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Upload Current Creative
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => analyzeCreative()}
-                    disabled={(!selectedFile && !uploadResult) || isUploading || isAnalyzing}
-                    className="w-full rounded-lg bg-seedtag-coral px-4 py-3 text-xs font-bold text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Run Diagnostic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={exportReport}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white transition-all hover:bg-white/10"
-                  >
-                    Export Report
-                  </button>
-                </section>
+                )}
               </>
-            ) : (
+            ) : activeSection === 'lifecycle' ? (
+              <>
+                  {/* Tab switcher */}
+                  <div className="flex rounded-lg border border-white/10 overflow-hidden mb-1">
+                    {(['benchmark', 'ab'] as const).map((tab) => (
+                      <button key={tab} type="button" onClick={() => setLifecycleTab(tab)}
+                        className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${
+                          lifecycleTab === tab ? 'bg-seedtag-coral text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}>
+                        {tab === 'benchmark' ? 'Benchmark' : 'A/B Compare'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {lifecycleTab === 'benchmark' ? (
+                    isLoadingHistory ? (
+                      <div className="flex items-center justify-center py-12 text-gray-500 text-sm">Loading…</div>
+                    ) : !diagnosticResult ? (
+                      <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+                        <TrendingUp size={28} className="mx-auto mb-3 text-gray-600" />
+                        <p className="text-sm font-bold text-gray-400">No current diagnostic</p>
+                        <p className="mt-1 text-xs text-gray-600">Run an analysis first to compare against history.</p>
+                      </div>
+                    ) : histAvg === null ? (
+                      <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+                        <p className="text-sm font-bold text-gray-400">No history yet</p>
+                        <p className="mt-1 text-xs text-gray-600">Run more analyses to build a benchmark baseline.</p>
+                      </div>
+                    ) : (
+                      <section className="space-y-3">
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            vs. average of {historySummaries.length} past run{historySummaries.length !== 1 ? 's' : ''}
+                          </p>
+                          {[
+                            { label: 'Attention', current: diagnosticResult.attention_score, avg: histAvg.attention, unit: '%', higherIsBetter: true },
+                            { label: 'Approval rate', current: diagnosticResult.final_decision.approved ? 100 : 0, avg: histAvg.approvalRate, unit: '%', higherIsBetter: true },
+                            { label: 'Frames analyzed', current: diagnosticResult.frames_analyzed, avg: histAvg.frames, unit: '', higherIsBetter: true },
+                          ].map(({ label, current, avg, unit, higherIsBetter }) => (
+                            <div key={label} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{label}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold text-white">{current.toFixed(1)}{unit}</span>
+                                <span className="text-[10px] text-gray-600">avg {avg.toFixed(1)}{unit}</span>
+                                <DeltaBadge current={current} avg={avg} higherIsBetter={higherIsBetter} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-2">Strategy distribution</p>
+                          {Array.from(new Set(historySummaries.map(h => h.strategy_category))).map(cat => {
+                            const count = historySummaries.filter(h => h.strategy_category === cat).length
+                            const pct = (count / historySummaries.length) * 100
+                            return (
+                              <div key={cat} className="mb-1.5">
+                                <div className="flex justify-between text-[10px] mb-0.5">
+                                  <span className={`font-bold ${diagnosticResult.final_decision.strategy_category === cat ? 'text-seedtag-coral' : 'text-gray-400'}`}>
+                                    {cat} {diagnosticResult.final_decision.strategy_category === cat ? '← current' : ''}
+                                  </span>
+                                  <span className="text-gray-500">{count} run{count !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="h-1.5 w-full rounded-full bg-white/10">
+                                  <div className="h-1.5 rounded-full bg-seedtag-coral/60" style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    )
+                  ) : (
+                    /* A/B tab */
+                    <section className="space-y-3">
+                      {isLoadingHistory ? (
+                        <div className="flex items-center justify-center py-8 text-gray-500 text-sm">Loading…</div>
+                      ) : historySummaries.length < 2 ? (
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+                          <p className="text-sm font-bold text-gray-400">Need at least 2 past runs</p>
+                          <p className="mt-1 text-xs text-gray-600">Run more analyses to enable A/B comparison.</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Selectors */}
+                          {(['a', 'b'] as const).map((side) => (
+                            <div key={side} className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral">Creative {side.toUpperCase()}</p>
+                              <select
+                                value={side === 'a' ? abIdA : abIdB}
+                                onChange={(e) => { side === 'a' ? setAbIdA(e.target.value) : setAbIdB(e.target.value); side === 'a' ? setAbResultA(null) : setAbResultB(null) }}
+                                className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[10px] text-white focus:outline-none focus:border-seedtag-coral/50"
+                              >
+                                <option value="">— Select a run —</option>
+                                {historySummaries.map(h => (
+                                  <option key={h.request_id} value={h.request_id}>
+                                    {h.filename} · {h.attention_score.toFixed(0)}% · {new Date(h.analyzed_at).toLocaleDateString()}
+                                  </option>
+                                ))}
+                              </select>
+                              {(side === 'a' ? abIdA : abIdB) && !(side === 'a' ? abResultA : abResultB) && (
+                                <button type="button"
+                                  onClick={() => loadAbResult(side === 'a' ? abIdA : abIdB, side)}
+                                  disabled={side === 'a' ? abLoadingA : abLoadingB}
+                                  className="w-full rounded border border-seedtag-coral/30 bg-seedtag-coral/10 py-1.5 text-[10px] font-bold text-seedtag-coral hover:bg-seedtag-coral/20 transition-all disabled:opacity-50"
+                                >
+                                  {(side === 'a' ? abLoadingA : abLoadingB) ? 'Loading…' : 'Load Creative'}
+                                </button>
+                              )}
+                              {(side === 'a' ? abResultA : abResultB) && (
+                                <p className="text-[10px] text-emerald-400 font-bold">✓ Loaded</p>
+                              )}
+                            </div>
+                          ))}
+
+                          {/* Comparison table */}
+                          {abResultA && abResultB && (
+                            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                              <div className="grid grid-cols-3 gap-2 mb-2">
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Metric</span>
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral text-center">A</span>
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-blue-400 text-center">B</span>
+                              </div>
+                              <AbMetricRow label="Attention %" valA={abResultA.attention_score} valB={abResultB.attention_score} />
+                              <AbMetricRow label="Resonance" valA={abResultA.neural_resonance * 100} valB={abResultB.neural_resonance * 100} />
+                              <AbMetricRow label="Confidence" valA={abResultA.prediction_confidence * 100} valB={abResultB.prediction_confidence * 100} />
+                              <AbMetricRow label="Sensory load" valA={abResultA.sensory_load * 100} valB={abResultB.sensory_load * 100} higherIsBetter={false} />
+                              <AbMetricRow label="Brand voice" valA={abResultA.hybrid_flags.brand_voice_score * 100} valB={abResultB.hybrid_flags.brand_voice_score * 100} />
+                              <div className="grid grid-cols-3 gap-2 items-center pt-2 mt-1 border-t border-white/10">
+                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Decision</span>
+                                <span className={`text-center text-[10px] font-bold ${abResultA.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {abResultA.final_decision.approved ? 'Approved' : 'Revision'}
+                                </span>
+                                <span className={`text-center text-[10px] font-bold ${abResultB.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {abResultB.final_decision.approved ? 'Approved' : 'Revision'}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </section>
+                  )}
+                </>
+              )
+            : (
               <>
                 <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-center gap-2">
@@ -2067,6 +3557,7 @@ export default function DashboardPage() {
                     { depth: 'quick' as AnalysisDepth, fps: 1, label: 'Quick', detail: 'Fast pass for smoke tests.' },
                     { depth: 'standard' as AnalysisDepth, fps: 2, label: 'Standard', detail: 'Recommended CTV QA balance.' },
                     { depth: 'deep' as AnalysisDepth, fps: 3, label: 'Deep', detail: 'More frames for fast edits or dense offer copy.' },
+                    { depth: 'ultra' as AnalysisDepth, fps: 6, label: 'Ultra High', detail: '6 fps — maximum resolution for high-cut-rate or motion-heavy ads.' },
                   ].map((profile) => {
                     const selected = analysisDepth === profile.depth && frameRate === profile.fps
 
@@ -2178,6 +3669,8 @@ export default function DashboardPage() {
                     activeMarkerIndex={activeMarkerIndex}
                     onMarkerClick={handleMarkerClick}
                     seekTarget={videoSeekTarget}
+                    heatmap={heatmapEnabled ? activeHeatmap : null}
+                    heatmapType={activeHeatmapType}
                   />
                 </div>
                 <p className="text-[10px] text-gray-500 text-center">
@@ -2258,6 +3751,36 @@ export default function DashboardPage() {
                         </div>
                         <p className="text-sm leading-snug text-gray-300">{m.cognitiveResponse}</p>
                         <p className="text-sm leading-snug text-gray-400 italic">{m.recommendation}</p>
+                      </div>
+
+                      {/* Heatmap colour legend */}
+                      <div className="rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 space-y-1">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Heatmap overlay</p>
+                          <button
+                            type="button"
+                            onClick={() => setHeatmapEnabled((v) => !v)}
+                            className={`flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest transition-colors ${
+                              heatmapEnabled
+                                ? 'bg-seedtag-coral/20 text-seedtag-coral border border-seedtag-coral/30'
+                                : 'bg-white/5 text-gray-500 border border-white/10'
+                            }`}
+                          >
+                            {heatmapEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 shrink-0" />
+                          <span className="text-[10px] text-gray-300 leading-tight"><strong className="text-green-400">Verde</strong> — zona de foco activo (&lt; 40%)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0" />
+                          <span className="text-[10px] text-gray-300 leading-tight"><strong className="text-amber-400">Amarillo</strong> — atención moderada (40–70%)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shrink-0" />
+                          <span className="text-[10px] text-gray-300 leading-tight"><strong className="text-red-400">Rojo</strong> — alta carga cognitiva (&gt; 70%)</span>
+                        </div>
                       </div>
 
                       {/* Decision buttons */}
@@ -2346,6 +3869,102 @@ export default function DashboardPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Frame detail modal */}
+      {selectedFrame && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+          onClick={() => setSelectedFrame(null)}
+        >
+          <div
+            className="relative w-full max-w-lg mx-4 rounded-2xl border border-white/10 bg-[#0c0c0f] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Frame {selectedFrame.frame_index + 1}</p>
+                <p className="text-xl font-bold text-white">{selectedFrame.timestamp_seconds.toFixed(2)}s</p>
+                <p className="text-xs text-gray-400 mt-0.5">{selectedFrame.dominant_region}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedFrame(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Metrics bars */}
+            <div className="space-y-3 mb-5">
+              {[
+                { label: 'Attention Score', value: selectedFrame.attention_score, max: 100, color: 'bg-seedtag-coral' },
+                { label: 'Emotional Response', value: selectedFrame.emotional_response * 100, max: 100, color: 'bg-purple-400' },
+                { label: 'Sensory Load', value: selectedFrame.sensory_load * 100, max: 100, color: 'bg-amber-400' },
+              ].map((m) => (
+                <div key={m.label}>
+                  <div className="flex justify-between text-[10px] mb-1.5">
+                    <span className="text-gray-400 font-medium">{m.label}</span>
+                    <span className="font-bold text-white">{m.value.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-white/5 rounded-full">
+                    <div className={`h-2 rounded-full ${m.color} transition-all`} style={{ width: `${Math.min(m.value, 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Cognitive response */}
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 mb-3">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Cognitive Response</p>
+              <p className="text-sm text-gray-200 leading-relaxed">{selectedFrame.cognitive_response}</p>
+            </div>
+
+            {/* Recommendation */}
+            <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 mb-4">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-amber-400/70 mb-1.5">Recommendation</p>
+              <p className="text-sm text-amber-100/80 leading-relaxed">{selectedFrame.recommendation}</p>
+            </div>
+
+            {/* Attention heatmap */}
+            {selectedFrame.attention_map && (
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-2">Attention Heatmap</p>
+                <div
+                  className="w-full rounded-lg overflow-hidden"
+                  style={{ display: 'grid', gridTemplateRows: `repeat(${selectedFrame.attention_map.length}, 1fr)`, aspectRatio: '1' }}
+                >
+                  {selectedFrame.attention_map.map((row, r) => (
+                    <div key={r} style={{ display: 'grid', gridTemplateColumns: `repeat(${row.length}, 1fr)` }}>
+                      {row.map((v, c) => (
+                        <div
+                          key={c}
+                          style={{
+                            background: v < 0.4
+                              ? `rgba(34,197,94,${0.15 + v * 0.55})`
+                              : v < 0.7
+                                ? `rgba(251,191,36,${0.15 + v * 0.55})`
+                                : `rgba(239,68,68,${0.15 + v * 0.55})`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-4 mt-2 justify-center">
+                  {[['bg-green-500', 'Focus zone'], ['bg-amber-400', 'Moderate load'], ['bg-red-500', 'High load']].map(([bg, label]) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <span className={`inline-block h-2 w-2 rounded-full ${bg}`} />
+                      <span className="text-[10px] text-gray-500">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }

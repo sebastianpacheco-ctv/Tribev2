@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Play, Pause, Upload, Loader2, Maximize, Volume2, VolumeX } from 'lucide-react'
 import { motion } from 'framer-motion'
 
@@ -26,14 +26,16 @@ interface VideoCortexProps {
   hideControls?: boolean;
   isDone?: boolean;
   onReset?: () => void;
-  analysisDepth?: 'quick' | 'standard' | 'deep';
-  onDepthChange?: (depth: 'quick' | 'standard' | 'deep') => void;
+  analysisDepth?: 'quick' | 'standard' | 'deep' | 'ultra';
+  onDepthChange?: (depth: 'quick' | 'standard' | 'deep' | 'ultra') => void;
   formatType?: 'bespoke' | 'frame' | 'standard_video';
   onFormatChange?: (format: 'bespoke' | 'frame' | 'standard_video') => void;
   markers?: TimelineMarker[];
   activeMarkerIndex?: number | null;
   onMarkerClick?: (frameIndex: number, timestampSeconds: number) => void;
   seekTarget?: number | null;
+  heatmap?: number[][] | null;
+  heatmapType?: 'low-attention' | 'high-load' | null;
 }
 
 function formatTime(seconds: number) {
@@ -106,6 +108,8 @@ export default function VideoCortex({
   activeMarkerIndex = null,
   onMarkerClick,
   seekTarget = null,
+  heatmap = null,
+  heatmapType = null,
 }: VideoCortexProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
@@ -113,7 +117,45 @@ export default function VideoCortex({
   const [duration, setDuration] = useState(0)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const drawHeatmap = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    canvas.width = canvas.offsetWidth
+    canvas.height = canvas.offsetHeight
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    if (!heatmap || heatmap.length === 0) return
+
+    const rows = heatmap.length
+    const cols = heatmap[0]?.length ?? 0
+    if (!rows || !cols) return
+
+    const cellW = canvas.width / cols
+    const cellH = canvas.height / rows
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const v = heatmap[r][c]
+        if (v < 0.1) continue
+        const alpha = Math.min(0.72, v * 0.8)
+        let color: string
+        if (v < 0.4)       color = `rgba(34, 197, 94, ${alpha})`   // green  — safe zone
+        else if (v < 0.7)  color = `rgba(251, 191, 36, ${alpha})`  // amber  — caution
+        else               color = `rgba(239, 68, 68, ${alpha})`   // red    — problem zone
+        ctx.fillStyle = color
+        ctx.fillRect(Math.round(c * cellW), Math.round(r * cellH), Math.ceil(cellW), Math.ceil(cellH))
+      }
+    }
+  }, [heatmap, heatmapType])
+
+  useEffect(() => {
+    drawHeatmap()
+  }, [drawHeatmap])
   const showUploadProgress = Boolean(selectedFileName && (isUploading || uploadProgress > 0))
   const showAnalysisProgress = Boolean(isAnalyzing || analysisProgress > 0)
 
@@ -128,9 +170,11 @@ export default function VideoCortex({
     }
   }, [videoUrl])
 
-  // Seek video when a marker is activated externally
+  // Seek video when a marker is activated externally — pause so audio doesn't bleed
   useEffect(() => {
     if (seekTarget === null || seekTarget === undefined || !videoRef.current || !duration) return
+    videoRef.current.pause()
+    setIsPlaying(false)
     videoRef.current.currentTime = Math.max(0, Math.min(seekTarget, duration))
     const nextProgress = duration > 0 ? (videoRef.current.currentTime / duration) * 100 : 0
     setProgress(nextProgress)
@@ -212,25 +256,38 @@ export default function VideoCortex({
       <input
         ref={inputRef}
         type="file"
-        accept="video/*"
+        accept="video/*,image/png,image/jpeg,image/webp"
         className="hidden"
         onChange={handleFileChange}
       />
 
       <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black overflow-hidden">
         {videoUrl ? (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            muted={isMuted}
-            className="h-full w-full object-cover"
-            onLoadedMetadata={handleLoadedMetadata}
-            onTimeUpdate={handleTimeUpdate}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-            preload="metadata"
-          />
+          <>
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              muted={isMuted}
+              autoPlay={false}
+              className="h-full w-full object-cover"
+              onLoadedMetadata={handleLoadedMetadata}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => setIsPlaying(false)}
+              preload="metadata"
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 h-full w-full pointer-events-none"
+              style={{
+                mixBlendMode: 'screen',
+                opacity: heatmap ? 1 : 0,
+                transition: 'opacity 0.4s',
+                filter: 'blur(22px) saturate(1.4)',
+              }}
+            />
+          </>
         ) : (
           <motion.div
             className="relative flex h-full w-full items-center justify-center overflow-hidden bg-black"
@@ -254,11 +311,21 @@ export default function VideoCortex({
           </motion.div>
         )}
 
+        {/* Click overlay — play when paused, pause when playing */}
+        {videoUrl && (
+          <div
+            className="absolute inset-0 z-[5] cursor-pointer"
+            onClick={togglePlay}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          />
+        )}
+
         {!isPlaying && videoUrl && (
           <motion.button
             whileHover={{ scale: 1.08 }}
             onClick={togglePlay}
             className="absolute z-10 flex h-16 w-16 items-center justify-center rounded-full bg-seedtag-coral text-white shadow-2xl shadow-seedtag-coral/40"
+            style={{ pointerEvents: 'none' }}
           >
             <Play size={28} fill="currentColor" />
           </motion.button>
@@ -302,7 +369,7 @@ export default function VideoCortex({
         )}
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-black/85 to-transparent p-4 opacity-100 transition-all duration-300 group-hover:translate-y-0">
+      <div className="absolute inset-x-0 bottom-0 z-10 translate-y-2 bg-gradient-to-t from-black/85 to-transparent p-4 opacity-100 transition-all duration-300 group-hover:translate-y-0">
           <div className="space-y-3">
 
           {/* Timeline bar with markers */}
@@ -449,7 +516,7 @@ export default function VideoCortex({
 
               {!isUploading && !isAnalyzing && !isDone && onDepthChange && (
                 <div className="flex rounded-lg border border-white/10 overflow-hidden">
-                  {(['quick', 'standard', 'deep'] as const).map((d) => (
+                  {(['quick', 'standard', 'deep', 'ultra'] as const).map((d) => (
                     <button
                       key={d}
                       type="button"

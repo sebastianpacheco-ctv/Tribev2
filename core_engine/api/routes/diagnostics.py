@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import shutil
@@ -16,6 +17,7 @@ from core_engine.api.schemas.diagnostics import (
     DiagnosticResult,
     FinalDecision,
     FrameInsight,
+    HistorySummary,
     HybridFlags,
     UploadVideoResponse,
     VideoInferenceRequest,
@@ -51,9 +53,24 @@ def _ensure_request_dirs(request_id: str, frame_rate: float = 1.0) -> None:
     _request_upload_dir(request_id).mkdir(parents=True, exist_ok=True)
     _request_frames_dir(request_id, frame_rate).mkdir(parents=True, exist_ok=True)
 
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
+
 def _safe_filename(filename: str) -> str:
-    fallback_name = "uploaded_video.bin"
+    fallback_name = "uploaded_file.bin"
     return Path(filename or fallback_name).name or fallback_name
+
+def _is_image_file(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_EXTENSIONS
+
+def _load_image_as_stimuli(image_path: Path) -> np.ndarray:
+    """Load a static image as a (1, H, W, 3) float32 array in [0, 1]."""
+    img = Image.open(image_path).convert('RGB')
+    w, h = img.size
+    max_dim = 1024
+    if max(w, h) > max_dim:
+        scale = max_dim / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    return (np.array(img, dtype=np.float32) / 255.0)[np.newaxis, ...]
 
 # ---------------------------------------------------------------------------
 # Upload / frame helpers
@@ -534,12 +551,22 @@ def _cleanup_old_requests(max_age_hours: int = TMP_MAX_AGE_HOURS) -> int:
             pass
     return deleted
 
+
+def _delete_frames_dir(request_id: str) -> None:
+    """Remove extracted frames after a completed analysis to free disk space."""
+    frames_root = _request_root(request_id) / "frames"
+    if frames_root.exists():
+        try:
+            shutil.rmtree(frames_root)
+        except Exception:
+            pass
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @router.post("/analyze", response_model=DiagnosticResult)
-async def analyze_creative(request: VideoInferenceRequest):
+async def analyze_creative(background_tasks: BackgroundTasks, request: VideoInferenceRequest):
     if not request.request_id and not request.video_url:
         raise HTTPException(
             status_code=400,
@@ -557,16 +584,32 @@ async def analyze_creative(request: VideoInferenceRequest):
             raise HTTPException(status_code=404, detail=f"Video path not found: {video_path}")
         _ensure_request_dirs(request_id, frame_rate)
 
-    frame_paths = _resolve_frame_paths(request_id, video_path, frame_rate)
-    if not frame_paths:
-        raise HTTPException(status_code=422, detail="No frames could be extracted from the provided video.")
+    if _is_image_file(video_path):
+        stimuli = _load_image_as_stimuli(video_path)
+        frame_paths = [str(video_path)]
+        actual_fps = frame_rate
+    else:
+        frame_paths = _resolve_frame_paths(request_id, video_path, frame_rate)
+        if not frame_paths:
+            raise HTTPException(status_code=422, detail="No frames could be extracted from the provided video.")
+        processor = VideoProcessor(output_dir=str(_request_frames_dir(request_id, frame_rate)))
+        stimuli = processor.get_frame_grid_analysis(frame_paths)
+        # Compute the actual fps used — VideoProcessor may have capped extraction.
+        # Using actual fps ensures timestamps span the full video duration.
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            raw_fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames_raw = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            video_duration = total_frames_raw / raw_fps if raw_fps > 0 else 0
+            actual_fps = len(frame_paths) / video_duration if video_duration > 0 else frame_rate
+        except Exception:
+            actual_fps = frame_rate
 
-    processor = VideoProcessor(output_dir=str(_request_frames_dir(request_id, frame_rate)))
-    stimuli = processor.get_frame_grid_analysis(frame_paths)
     format_type = request.format_type or "bespoke"
-    stimuli_for_inference = _preprocess_stimuli_for_format(stimuli, format_type)
-    inference_result = engine.predict(stimuli_for_inference)
-    frame_insights_data = engine.predict_frame_sequence(stimuli_for_inference, frame_rate)
+    stimuli_for_inference = _preprocess_stimuli_for_format(stimuli, format_type) if not _is_image_file(video_path) else stimuli
+    inference_result = await asyncio.to_thread(engine.predict, stimuli_for_inference)
+    frame_insights_data = await asyncio.to_thread(engine.predict_frame_sequence, stimuli_for_inference, actual_fps)
 
     try:
         gemini_explanation_str = await insight_gen.generate_explanation(inference_result)
@@ -593,6 +636,7 @@ async def analyze_creative(request: VideoInferenceRequest):
         frame_insights_data,
     )
 
+    analyzed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     metadata = {
         "request_id": request_id,
         "filename": video_path.name,
@@ -600,13 +644,13 @@ async def analyze_creative(request: VideoInferenceRequest):
         "analysis_depth": request.analysis_depth,
         "format_type": format_type,
         "frames_extracted": len(frame_paths),
-        "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "analyzed_at": analyzed_at,
     }
     _request_metadata_path(request_id).write_text(json.dumps(metadata, indent=2))
 
-    return DiagnosticResult(
+    result = DiagnosticResult(
         request_id=request_id,
-        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        timestamp=analyzed_at,
         ai_automated=automated_flags,
         hybrid_flags=hybrid_flags,
         attention_score=inference_result.get("attention_score", 0),
@@ -623,6 +667,54 @@ async def analyze_creative(request: VideoInferenceRequest):
             revisions_required=decision_dict.get("revisions_required", True),
         ),
     )
+    (_request_root(request_id) / "result.json").write_text(
+        result.model_dump_json(indent=2)
+    )
+    background_tasks.add_task(_delete_frames_dir, request_id)
+    return result
+
+
+@router.get("/", response_model=list[HistorySummary])
+async def list_diagnostics():
+    """Return a summary list of all completed diagnostics, newest first."""
+    summaries: list[HistorySummary] = []
+    if not TMP_ROOT.exists():
+        return summaries
+    for request_dir in TMP_ROOT.iterdir():
+        if not request_dir.is_dir():
+            continue
+        result_path = request_dir / "result.json"
+        meta_path = request_dir / "metadata.json"
+        if not result_path.exists():
+            continue
+        try:
+            result_data = json.loads(result_path.read_text())
+            meta_data = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+            summaries.append(HistorySummary(
+                request_id=result_data["request_id"],
+                filename=meta_data.get("filename", "unknown"),
+                analyzed_at=result_data.get("timestamp", ""),
+                attention_score=result_data.get("attention_score", 0.0),
+                approved=result_data.get("final_decision", {}).get("approved", False),
+                strategy_category=result_data.get("final_decision", {}).get("strategy_category", "Unknown"),
+                frames_analyzed=result_data.get("frames_analyzed", 0),
+            ))
+        except Exception:
+            continue
+    summaries.sort(key=lambda s: s.analyzed_at, reverse=True)
+    return summaries
+
+
+@router.get("/{request_id}", response_model=DiagnosticResult)
+async def get_diagnostic(request_id: str):
+    """Return the full DiagnosticResult for a past run."""
+    result_path = _request_root(request_id) / "result.json"
+    if not result_path.exists():
+        raise HTTPException(status_code=404, detail=f"No result found for request_id '{request_id}'.")
+    try:
+        return DiagnosticResult.model_validate_json(result_path.read_text())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to parse result: {exc}") from exc
 
 
 @router.post("/upload", response_model=UploadVideoResponse)
@@ -640,14 +732,16 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = Fil
         "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     _request_metadata_path(request_id).write_text(json.dumps(upload_metadata, indent=2))
-    background_tasks.add_task(_extract_frames_for_request, destination, _request_frames_dir(request_id, 1), 1)
+    if not _is_image_file(destination):
+        background_tasks.add_task(_extract_frames_for_request, destination, _request_frames_dir(request_id, 1), 1)
     background_tasks.add_task(_cleanup_old_requests, TMP_MAX_AGE_HOURS)
 
+    is_image = _is_image_file(destination)
     return UploadVideoResponse(
         request_id=request_id,
         filename=safe_name,
         status="uploaded",
-        message="Video uploaded successfully and frame extraction started.",
+        message="Image uploaded and ready for analysis." if is_image else "Video uploaded successfully and frame extraction started.",
     )
 
 
@@ -656,3 +750,16 @@ async def cleanup_diagnostics(max_age_hours: int = TMP_MAX_AGE_HOURS):
     """Delete tmp/diagnostics directories older than max_age_hours (default 24h)."""
     deleted = _cleanup_old_requests(max_age_hours)
     return {"deleted_requests": deleted, "max_age_hours": max_age_hours}
+
+
+@router.delete("/{request_id}")
+async def delete_diagnostic(request_id: str):
+    """Permanently delete a diagnostic run and all its associated files."""
+    request_dir = _request_root(request_id)
+    if not request_dir.exists():
+        raise HTTPException(status_code=404, detail=f"No diagnostic found for request_id '{request_id}'.")
+    try:
+        shutil.rmtree(request_dir)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete diagnostic: {exc}") from exc
+    return {"deleted": request_id}

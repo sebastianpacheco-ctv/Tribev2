@@ -2,6 +2,7 @@ import numpy as np
 from typing import Dict, Any, List
 from PIL import Image
 
+import cv2
 import torch
 import open_clip
 
@@ -283,6 +284,7 @@ class TribeInferenceEngine:
             else:
                 recommendation = "Keep this moment as a structural anchor for the edit."
 
+            map_type = "low-attention" if attention_score < 75 else "high-load"
             insights.append({
                 "frame_index": frame_index,
                 "timestamp_seconds": round(frame_index / max(0.1, frame_rate), 2),
@@ -292,9 +294,60 @@ class TribeInferenceEngine:
                 "sensory_load": round(sensory_load, 4),
                 "cognitive_response": cognitive_response,
                 "recommendation": recommendation,
+                "attention_map": self.compute_spatial_heatmap(frame, map_type),
             })
 
         return insights
+
+    def compute_spatial_heatmap(
+        self, frame: np.ndarray, map_type: str, grid: int = 14
+    ) -> List[List[float]]:
+        """
+        Compute a grid×grid spatial saliency map for a single frame.
+        - map_type 'high-load'     : cells with highest visual complexity (edges + variance + saturation).
+        - map_type 'low-attention' : cells with lowest visual salience (inverted complexity map).
+        frame: (H, W, 3) float32 in [0, 1].
+        Returns a grid×grid list of floats in [0, 1].
+        """
+        try:
+            h, w = frame.shape[:2]
+            lum = (0.2126 * frame[..., 0] + 0.7152 * frame[..., 1] + 0.0722 * frame[..., 2])
+            lum_u8 = (lum * 255).astype(np.uint8)
+            grad_x = cv2.Sobel(lum_u8, cv2.CV_32F, 1, 0, ksize=3)
+            grad_y = cv2.Sobel(lum_u8, cv2.CV_32F, 0, 1, ksize=3)
+            grad_mag = np.sqrt(grad_x ** 2 + grad_y ** 2) / 1448.0
+            sat = frame.max(axis=-1) - frame.min(axis=-1)
+
+            cell_h = h / grid
+            cell_w = w / grid
+            raw: List[List[float]] = []
+            for r in range(grid):
+                row_vals: List[float] = []
+                for c in range(grid):
+                    r0, r1 = int(r * cell_h), max(int(r * cell_h) + 1, int((r + 1) * cell_h))
+                    c0, c1 = int(c * cell_w), max(int(c * cell_w) + 1, int((c + 1) * cell_w))
+                    score = (
+                        float(grad_mag[r0:r1, c0:c1].mean()) * 0.5
+                        + float(lum[r0:r1, c0:c1].std()) * 0.3
+                        + float(sat[r0:r1, c0:c1].mean()) * 0.2
+                    )
+                    row_vals.append(score)
+                raw.append(row_vals)
+
+            flat = [v for row in raw for v in row]
+            vmin, vmax = min(flat), max(flat)
+            if vmax - vmin < 1e-6:
+                return [[0.0] * grid for _ in range(grid)]
+
+            normalized = [
+                [round((v - vmin) / (vmax - vmin), 4) for v in row]
+                for row in raw
+            ]
+            if map_type == "low-attention":
+                normalized = [[round(1.0 - v, 4) for v in row] for row in normalized]
+            return normalized
+        except Exception:
+            return [[0.0] * grid for _ in range(grid)]
 
     def get_voxel_heatmap(self) -> List[List[float]]:
         return [
