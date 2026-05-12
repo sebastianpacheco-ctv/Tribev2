@@ -1,3 +1,4 @@
+import threading
 import numpy as np
 from typing import Dict, Any, List
 from PIL import Image
@@ -91,11 +92,19 @@ class TribeInferenceEngine:
         self._clip_preprocess = None
         self._text_features: Dict[str, torch.Tensor] = {}
         self._clip_ready = False
-        self._load_clip()
+        self._load_lock = threading.Lock()  # prevents double-load under concurrent requests
 
     # ------------------------------------------------------------------
     # CLIP loading
     # ------------------------------------------------------------------
+
+    def _ensure_loaded(self) -> None:
+        """Lazy-load the model on first use. Thread-safe."""
+        if self._clip_ready:
+            return
+        with self._load_lock:
+            if not self._clip_ready:  # double-checked locking
+                self._load_clip()
 
     def _load_clip(self) -> None:
         try:
@@ -222,6 +231,7 @@ class TribeInferenceEngine:
         Score a sequence of frames using CLIP zero-shot alignment.
         Falls back to pixel heuristics if CLIP is unavailable.
         """
+        self._ensure_loaded()
         if stimuli.ndim != 4 or stimuli.shape[-1] != 3:
             raise ValueError("Stimuli must have shape (frames, H, W, 3).")
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException
+from fastapi.responses import FileResponse
 from PIL import Image
 
 from core_engine.api.schemas.diagnostics import (
@@ -792,6 +793,15 @@ async def list_diagnostics():
             continue
     summaries.sort(key=lambda s: s.analyzed_at, reverse=True)
     return summaries
+
+
+@router.get("/{request_id}/screenshot")
+async def get_screenshot(request_id: str):
+    """Serve the URL preview screenshot PNG for a given request."""
+    screenshot_path = _request_upload_dir(request_id) / "preview_screenshot.png"
+    if not screenshot_path.exists():
+        raise HTTPException(status_code=404, detail="No screenshot available for this request.")
+    return FileResponse(str(screenshot_path), media_type="image/png")
 
 
 @router.get("/{request_id}", response_model=DiagnosticResult)

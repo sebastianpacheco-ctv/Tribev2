@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Compass,
   Download,
   FileText,
   FlaskConical,
@@ -53,6 +54,8 @@ import type {
 
 import { StatCard } from '@/components/ui'
 import { ConfigSection } from './sections/ConfigSection'
+import TourOverlay from '@/components/TourOverlay'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { DiagnosticsPanel } from './sections/DiagnosticsPanel'
 import { ExecSummarySection } from './sections/ExecSummarySection'
 import { HistorySection } from './sections/HistorySection'
@@ -226,8 +229,10 @@ export default function DashboardPage() {
   const [abLoadingB, setAbLoadingB] = useState(false)
   const [uploadMode, setUploadMode] = useState<'file' | 'url'>('file')
   const [urlInput, setUrlInput] = useState('')
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
   const [historySearch, setHistorySearch] = useState('')
   const [historyFilter, setHistoryFilter] = useState<'all' | 'approved' | 'revision'>('all')
+  const [tourActive, setTourActive] = useState(false)
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
@@ -578,6 +583,8 @@ export default function DashboardPage() {
     setActivation(0.4)
     setRegion('all')
     setVoxelMode(false)
+    setScreenshotUrl(null)
+    setUploadMode('file')
   }
 
   const analyzeFromUrl = async () => {
@@ -593,6 +600,7 @@ export default function DashboardPage() {
     try {
       const result = await analyzeUrlPreview(url, analysisDepth, formatType)
       setDiagnosticResult(result)
+      setScreenshotUrl(`${DIAGNOSTICS_API_BASE}/${result.request_id}/screenshot`)
       setAnalysisProgress(100)
       setInfoMessage('URL preview analyzed successfully.')
       openSection('diagnostics')
@@ -724,23 +732,39 @@ export default function DashboardPage() {
           <nav className="flex-1 space-y-2">
             <SidebarItem icon={Activity}    label="Diagnostics"     active={activeSection === 'diagnostics'} onClick={() => openSection('diagnostics')} />
             <SidebarItem icon={BarChart3}   label="Neural Insights" active={activeSection === 'insights'}   onClick={() => openSection('insights')} />
-            <SidebarItem icon={FileText}    label="Exec Summary"   active={activeSection === 'exec'}        onClick={() => openSection('exec')} />
-            <SidebarItem icon={Clock}       label="History"         active={activeSection === 'history'}    onClick={() => openSection('history')} />
+            <div data-tour="exec-sidebar">
+              <SidebarItem icon={FileText}  label="Exec Summary"   active={activeSection === 'exec'}        onClick={() => openSection('exec')} />
+            </div>
+            <div data-tour="history-sidebar">
+              <SidebarItem icon={Clock}     label="History"         active={activeSection === 'history'}    onClick={() => openSection('history')} />
+            </div>
             <SidebarItem icon={TrendingUp}  label="Lifecycle"       active={activeSection === 'lifecycle'}  onClick={() => openSection('lifecycle')} />
             <SidebarItem icon={Settings}    label="System Config"   active={activeSection === 'config'}     onClick={() => openSection('config')} />
           </nav>
 
-          <button
-            type="button"
-            onClick={loadDemoData}
-            className="w-full flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold text-gray-500 border border-dashed border-white/10 hover:border-seedtag-coral/40 hover:text-seedtag-coral transition-all mb-4"
-          >
-            <FlaskConical size={14} />
-            Load Demo Data
-          </button>
+          <div className="flex gap-2 mb-4">
+            <button
+              type="button"
+              onClick={loadDemoData}
+              data-tour="demo-btn"
+              className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-bold text-gray-500 border border-dashed border-white/10 hover:border-seedtag-coral/40 hover:text-seedtag-coral transition-all"
+            >
+              <FlaskConical size={14} />
+              Demo
+            </button>
+            <button
+              type="button"
+              onClick={() => setTourActive(true)}
+              title="Start tour"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-bold text-gray-500 border border-dashed border-white/10 hover:border-seedtag-coral/40 hover:text-seedtag-coral transition-all"
+            >
+              <Compass size={14} />
+              Tour
+            </button>
+          </div>
 
           <div className="mt-auto">
-            <div className="glass-card p-5 bg-white/[0.03] border-white/10 space-y-3">
+            <div data-tour="engine-status" className="glass-card p-5 bg-white/[0.03] border-white/10 space-y-3">
               {/* Header */}
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Engine Status</span>
@@ -853,15 +877,46 @@ export default function DashboardPage() {
 
             {/* Neural Insights — BrainViewer fills center */}
             {activeSection === 'insights' && (
-              <NeuralInsightsSection
-                diagnosticResult={diagnosticResult}
-                activation={activation}
-                region={region}
-                hoveredRegion={hoveredRegion}
-                showConclusion={showConclusion}
-                setShowConclusion={setShowConclusion}
-                setHoveredRegion={setHoveredRegion}
-              />
+              <ErrorBoundary label="Neural Insights">
+                <NeuralInsightsSection
+                  diagnosticResult={diagnosticResult}
+                  activation={activation}
+                  region={region}
+                  hoveredRegion={hoveredRegion}
+                  showConclusion={showConclusion}
+                  setShowConclusion={setShowConclusion}
+                  setHoveredRegion={setHoveredRegion}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* URL screenshot result — shown after URL analysis completes */}
+            {activeSection === 'diagnostics' && uploadMode === 'url' && diagnosticResult && screenshotUrl && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-[70%] mx-auto"
+              >
+                <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/60 relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={screenshotUrl}
+                    alt="URL preview screenshot"
+                    className="w-full block"
+                    style={{ maxHeight: 420, objectFit: 'cover', objectPosition: 'top' }}
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-gradient-to-t from-black/90 to-transparent flex items-center justify-between">
+                    <span className="text-xs text-gray-400 truncate max-w-[70%]">{urlInput}</span>
+                    <button
+                      type="button"
+                      onClick={resetSession}
+                      className="text-[10px] font-bold text-gray-500 hover:text-white transition-colors"
+                    >
+                      + New
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             )}
 
             {/* URL Preview input — diagnostics only, no result loaded */}
@@ -913,6 +968,7 @@ export default function DashboardPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.5 }}
+              data-tour="upload-area"
               className={`w-[70%] mx-auto rounded-2xl backdrop-blur-xl bg-black/60 ring-1 ring-white/[0.06] ${activeSection !== 'diagnostics' || uploadMode === 'url' ? 'hidden' : ''}`}
             >
               {isStaticImage && previewUrl ? (
@@ -1174,6 +1230,7 @@ export default function DashboardPage() {
 
         {/* ── Right panel ───────────────────────────────────────────────────── */}
         <motion.aside
+          data-tour="diagnostics-panel"
           initial={{ x: 100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -1191,6 +1248,7 @@ export default function DashboardPage() {
             </span>
           </div>
 
+          <ErrorBoundary label="Diagnostics Panel">
           <DiagnosticsPanel
             activeSection={activeSection}
             diagnosticResult={diagnosticResult}
@@ -1236,6 +1294,7 @@ export default function DashboardPage() {
             setAnalysisProfile={setAnalysisProfile}
             resetSession={resetSession}
           />
+          </ErrorBoundary>
 
           <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/5 pt-5">
             <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3">
@@ -1483,6 +1542,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+      {tourActive && <TourOverlay onClose={() => setTourActive(false)} />}
     </main>
   )
 }
