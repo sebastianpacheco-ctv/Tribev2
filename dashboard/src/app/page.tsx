@@ -220,7 +220,7 @@ export default function DashboardPage() {
   const [historyEditMode, setHistoryEditMode] = useState(false)
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set())
   const [isDeletingHistory, setIsDeletingHistory] = useState(false)
-  const [lifecycleTab, setLifecycleTab] = useState<'benchmark' | 'ab'>('benchmark')
+  const [lifecycleTab] = useState<'ab'>('ab')
   const [abIdA, setAbIdA] = useState<string>('')
   const [abIdB, setAbIdB] = useState<string>('')
   const [abResultA, setAbResultA] = useState<DiagnosticResult | null>(null)
@@ -328,7 +328,7 @@ export default function DashboardPage() {
       exec:        { title: 'Executive Summary',       eyebrow: 'Key findings for stakeholders',  panelTitle: 'Summary',         icon: FileText },
       config:      { title: 'System Config',           eyebrow: 'Runtime and endpoint controls',  panelTitle: 'System Config',   icon: Settings },
       history:     { title: 'Diagnostic History',      eyebrow: 'Past runs — click to reload',    panelTitle: 'History',         icon: Clock },
-      lifecycle:   { title: 'Creative Lifecycle',      eyebrow: 'Benchmark & A/B comparison',     panelTitle: 'Lifecycle',       icon: TrendingUp },
+      lifecycle:   { title: 'Creative Compare',         eyebrow: 'A/B creative comparison',        panelTitle: 'Compare',         icon: TrendingUp },
     }
     return metadata[activeSection]
   }, [activeSection])
@@ -684,6 +684,8 @@ export default function DashboardPage() {
       )
       setRegion(dominantRegionToKey(closest.dominant_region))
       setActivation(Math.max(0.18, Math.min(1, closest.attention_score / 100)))
+      // Keep heatmap in sync with playback — update even while playing
+      setActiveMarkerIndex(prev => prev !== closest.frame_index ? closest.frame_index : prev)
     } else {
       // Fallback: no frame data — use ordered region sweep
       const baseActivation = diagnosticResult.attention_score / 100
@@ -738,7 +740,7 @@ export default function DashboardPage() {
             <div data-tour="history-sidebar">
               <SidebarItem icon={Clock}     label="History"         active={activeSection === 'history'}    onClick={() => openSection('history')} />
             </div>
-            <SidebarItem icon={TrendingUp}  label="Lifecycle"       active={activeSection === 'lifecycle'}  onClick={() => openSection('lifecycle')} />
+            <SidebarItem icon={TrendingUp}  label="Compare"         active={activeSection === 'lifecycle'}  onClick={() => openSection('lifecycle')} />
             <SidebarItem icon={Settings}    label="System Config"   active={activeSection === 'config'}     onClick={() => openSection('config')} />
           </nav>
 
@@ -898,21 +900,22 @@ export default function DashboardPage() {
                 className="w-[70%] mx-auto"
               >
                 <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/60 relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={screenshotUrl}
-                    alt="URL preview screenshot"
-                    className="w-full block"
-                    style={{ maxHeight: 420, objectFit: 'cover', objectPosition: 'top' }}
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-gradient-to-t from-black/90 to-transparent flex items-center justify-between">
+                  <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={screenshotUrl}
+                      alt="URL preview screenshot"
+                      className="w-full block"
+                    />
+                  </div>
+                  <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between">
                     <span className="text-xs text-gray-400 truncate max-w-[70%]">{urlInput}</span>
                     <button
                       type="button"
                       onClick={resetSession}
-                      className="text-[10px] font-bold text-gray-500 hover:text-white transition-colors"
+                      className="text-[11px] font-bold text-gray-300 hover:text-white border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg px-3 py-1.5 transition-all"
                     >
-                      + New
+                      + New Creative
                     </button>
                   </div>
                 </div>
@@ -1090,7 +1093,9 @@ export default function DashboardPage() {
                     unit={diagnosticResult ? '%' : ''}
                     trend={diagnosticResult ? `${diagnosticResult.frames_analyzed} Frames` : 'Run a diagnostic'}
                     icon={Target}
-                    info={RESULT_EXPLAINERS.attention}
+                    info={diagnosticResult
+                      ? `Threshold: ≥70 Strong · 40–69 Moderate · <40 Low\n\nYour score of ${diagnosticResult.attention_score.toFixed(1)}% is ${diagnosticResult.attention_score >= 70 ? 'above the approval threshold — the creative holds focus effectively.' : diagnosticResult.attention_score >= 40 ? 'in the moderate range — there is room to strengthen the focal hierarchy.' : 'below threshold — the creative may not hold attention long enough to encode the message.'}`
+                      : RESULT_EXPLAINERS.attention}
                     badge={diagnosticResult ? {
                       text: diagnosticResult.attention_score >= 70 ? 'Strong' : diagnosticResult.attention_score >= 40 ? 'Moderate' : 'Low',
                       variant: diagnosticResult.attention_score >= 70 ? 'green' : diagnosticResult.attention_score >= 40 ? 'amber' : 'red',
@@ -1104,7 +1109,9 @@ export default function DashboardPage() {
                     unit={diagnosticResult ? '%' : ''}
                     trend={diagnosticResult ? `${(diagnosticResult.sensory_load * 100).toFixed(1)}% Sensory Load` : 'Run a diagnostic'}
                     icon={Zap}
-                    info={RESULT_EXPLAINERS.resonance}
+                    info={diagnosticResult
+                      ? `Threshold: ≥65% Strong · 40–64% Moderate · <40% Low\nSensory load ideal range: 18–52%\n\nEmotional resonance at ${(diagnosticResult.neural_resonance * 100).toFixed(0)}% with ${(diagnosticResult.sensory_load * 100).toFixed(1)}% sensory load. ${diagnosticResult.sensory_load > 0.52 ? 'Load is high — simplify dense moments so the offer is easy to absorb.' : diagnosticResult.sensory_load < 0.18 ? 'Load is low — add a stronger visual or product cue to prevent attention drift.' : 'Load is in the optimal range.'}`
+                      : RESULT_EXPLAINERS.resonance}
                     badge={diagnosticResult ? {
                       text: diagnosticResult.neural_resonance >= 0.65 ? 'Strong' : diagnosticResult.neural_resonance >= 0.40 ? 'Moderate' : 'Low',
                       variant: diagnosticResult.neural_resonance >= 0.65 ? 'green' : diagnosticResult.neural_resonance >= 0.40 ? 'amber' : 'red',
@@ -1118,7 +1125,9 @@ export default function DashboardPage() {
                     unit=""
                     trend={diagnosticResult ? (diagnosticResult.final_decision.approved ? 'Approved' : 'Needs Revision') : 'Run a diagnostic'}
                     icon={Brain}
-                    info={RESULT_EXPLAINERS.strategy}
+                    info={diagnosticResult
+                      ? `Eye-Catching: high motion/contrast — immediate visual impact.\nStorytelling: emotional + rich color — builds connection over time.\nClever Concept: idea-led — resonates through clarity and originality.\n\nDetected: ${diagnosticResult.final_decision.strategy_category}. ${diagnosticResult.final_decision.approved ? 'All QA gates passed — ready to traffic.' : 'One or more QA gates need attention before trafficking.'}`
+                      : RESULT_EXPLAINERS.strategy}
                     badge={diagnosticResult ? {
                       text: diagnosticResult.final_decision.approved ? 'Approved' : 'Revision',
                       variant: diagnosticResult.final_decision.approved ? 'green' : 'amber',
@@ -1138,13 +1147,19 @@ export default function DashboardPage() {
 
             {activeSection === 'lifecycle' && (
               <LifecycleSection
-                lifecycleTab={lifecycleTab}
-                setLifecycleTab={setLifecycleTab}
                 abResultA={abResultA}
                 abResultB={abResultB}
-                diagnosticResult={diagnosticResult}
-                histAvg={histAvg}
                 historySummaries={historySummaries}
+                isLoadingHistory={isLoadingHistory}
+                abIdA={abIdA}
+                abIdB={abIdB}
+                abLoadingA={abLoadingA}
+                abLoadingB={abLoadingB}
+                setAbIdA={setAbIdA}
+                setAbIdB={setAbIdB}
+                setAbResultA={setAbResultA}
+                setAbResultB={setAbResultB}
+                loadAbResult={loadAbResult}
               />
             )}
 
@@ -1235,7 +1250,7 @@ export default function DashboardPage() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
           className={`w-[440px] glass-panel m-4 flex flex-col p-6 h-[calc(100vh-32px)] border-white/5 ${
-            ['history', 'config', 'exec'].includes(activeSection) ? 'hidden' : ''
+            ['history', 'config', 'exec', 'lifecycle'].includes(activeSection) ? 'hidden' : ''
           }`}
         >
           <div className="flex items-center justify-between mb-8">
@@ -1268,7 +1283,6 @@ export default function DashboardPage() {
             isLoadingHistory={isLoadingHistory}
             historySummaries={historySummaries}
             lifecycleTab={lifecycleTab}
-            setLifecycleTab={setLifecycleTab}
             histAvg={histAvg}
             abResultA={abResultA}
             abResultB={abResultB}

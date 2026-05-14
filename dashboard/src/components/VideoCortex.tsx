@@ -115,6 +115,7 @@ export default function VideoCortex({
   const [isMuted, setIsMuted] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [heatmapOpacity, setHeatmapOpacity] = useState(0.72)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -142,7 +143,7 @@ export default function VideoCortex({
       for (let c = 0; c < cols; c++) {
         const v = heatmap[r][c]
         if (v < 0.1) continue
-        const alpha = Math.min(0.72, v * 0.8)
+        const alpha = Math.min(heatmapOpacity, v * heatmapOpacity)
         let color: string
         if (v < 0.4)       color = `rgba(34, 197, 94, ${alpha})`   // green  — safe zone
         else if (v < 0.7)  color = `rgba(251, 191, 36, ${alpha})`  // amber  — caution
@@ -151,7 +152,7 @@ export default function VideoCortex({
         ctx.fillRect(Math.round(c * cellW), Math.round(r * cellH), Math.ceil(cellW), Math.ceil(cellH))
       }
     }
-  }, [heatmap, heatmapType])
+  }, [heatmap, heatmapType, heatmapOpacity])
 
   useEffect(() => {
     drawHeatmap()
@@ -170,15 +171,16 @@ export default function VideoCortex({
     }
   }, [videoUrl])
 
-  // Seek video when a marker is activated externally — pause so audio doesn't bleed
+  // Seek video when a marker is activated externally — preserve play state
   useEffect(() => {
     if (seekTarget === null || seekTarget === undefined || !videoRef.current || !duration) return
-    videoRef.current.pause()
-    setIsPlaying(false)
+    const wasPlaying = !videoRef.current.paused
     videoRef.current.currentTime = Math.max(0, Math.min(seekTarget, duration))
     const nextProgress = duration > 0 ? (videoRef.current.currentTime / duration) * 100 : 0
     setProgress(nextProgress)
     onTimeUpdate?.(nextProgress)
+    // Resume if it was already playing
+    if (wasPlaying) videoRef.current.play().catch(() => {})
   }, [seekTarget, duration, onTimeUpdate])
 
   const togglePlay = async () => {
@@ -449,6 +451,20 @@ export default function VideoCortex({
             </div>
 
             <div className="flex items-center gap-4">
+              {heatmap && (
+                <div className="flex items-center gap-2" title="Heatmap intensity">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">HM</span>
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={heatmapOpacity}
+                    onChange={(e) => setHeatmapOpacity(parseFloat(e.target.value))}
+                    className="w-16 h-1 accent-seedtag-coral cursor-pointer"
+                  />
+                </div>
+              )}
               <button
                 type="button"
                 onClick={toggleMute}

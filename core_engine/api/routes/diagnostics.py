@@ -695,15 +695,73 @@ async def analyze_url_preview(body: UrlPreviewRequest):
         from playwright.async_api import async_playwright
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1280, "height": 720})
+            page = await browser.new_page(viewport={"width": 1280, "height": 900})
             await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.screenshot(path=str(screenshot_path), full_page=False)
+
+            # Scroll to trigger all lazy-loaded iframes
+            page_height = await page.evaluate("document.body.scrollHeight")
+            pos = 0
+            while pos < page_height:
+                await page.evaluate(f"window.scrollTo(0, {pos})")
+                await asyncio.sleep(0.3)
+                pos += 600
+            await page.evaluate("window.scrollTo(0, 0)")
+            await asyncio.sleep(2)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
+
+            # Screenshot each visible iframe individually as a separate creative
+            iframes = await page.query_selector_all("iframe")
+            creative_paths: list[Path] = []
+            for i, frame_el in enumerate(iframes):
+                try:
+                    box = await frame_el.bounding_box()
+                    if not box or box["width"] < 60 or box["height"] < 60:
+                        continue
+                    frame_img_path = upload_dir / f"creative_{i:02d}.png"
+                    await frame_el.scroll_into_view_if_needed()
+                    await asyncio.sleep(0.3)
+                    await frame_el.screenshot(path=str(frame_img_path))
+                    creative_paths.append(frame_img_path)
+                except Exception:
+                    continue
+
+            # Full-page screenshot for preview display
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.screenshot(path=str(screenshot_path), full_page=True)
             await browser.close()
+
+            # Fallback: use full-page if no iframes captured
+            if not creative_paths:
+                creative_paths = [screenshot_path]
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Screenshot failed: {exc}") from exc
 
-    stimuli = _load_image_as_stimuli(screenshot_path)
-    frame_paths = [str(screenshot_path)]
+    frame_paths = [str(p) for p in creative_paths]
+
+    # Build stimuli array — stack all creatives as individual frames
+    frames_list = []
+    for fp in frame_paths:
+        img = Image.open(fp).convert("RGB")
+        w, h = img.size
+        max_dim = 1024
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        frames_list.append(np.array(img, dtype=np.float32) / 255.0)
+
+    if not frames_list:
+        raise HTTPException(status_code=422, detail="No creatives could be captured from the URL.")
+
+    max_h = max(f.shape[0] for f in frames_list)
+    max_w = max(f.shape[1] for f in frames_list)
+    padded = [
+        np.pad(f, ((0, max_h - f.shape[0]), (0, max_w - f.shape[1]), (0, 0)), mode="constant")
+        for f in frames_list
+    ]
+    stimuli = np.stack(padded, axis=0)  # (N_creatives, H, W, 3)
 
     inference_result = await asyncio.to_thread(engine.predict, stimuli)
     frame_insights_data = await asyncio.to_thread(engine.predict_frame_sequence, stimuli, 1.0)
@@ -736,7 +794,7 @@ async def analyze_url_preview(body: UrlPreviewRequest):
         "frame_rate": 1.0,
         "analysis_depth": body.analysis_depth,
         "format_type": body.format_type,
-        "frames_extracted": 1,
+        "frames_extracted": len(frame_paths),
         "analyzed_at": analyzed_at,
     }
     _request_metadata_path(request_id).write_text(json.dumps(metadata, indent=2))

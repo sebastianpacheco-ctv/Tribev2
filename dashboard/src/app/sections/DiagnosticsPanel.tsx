@@ -48,6 +48,37 @@ interface RegionMetric {
   color: string
 }
 
+const REGION_THRESHOLDS: Record<string, { high: string; mid: string; low: string }> = {
+  'Frontal (Attention)': {
+    high: 'Strong message clarity — the creative demands active cognitive focus. Viewers are likely to encode the key message.',
+    mid: 'Moderate engagement. The message hierarchy could be stronger — a clearer focal point or copy contrast would help.',
+    low: 'Weak attention signal. The message is not cutting through. Strengthen the main communication with contrast or hierarchy.',
+  },
+  'Visual (V1)': {
+    high: 'High visual impact — composition, contrast and color are working hard. Likely to stop the scroll and create recall.',
+    mid: 'Moderate visual impact. Adding stronger contrast between product and background could increase salience.',
+    low: 'Low visual engagement. Rework layout, contrast or motion to give the eye a clear place to land.',
+  },
+  'Temporal (Audio)': {
+    high: 'Copy, pacing or editing rhythm is reinforcing the message well. Good audio-visual coherence.',
+    mid: 'Moderate audio-visual signal. On-screen text or sound design could do more to support the offer.',
+    low: 'Audio or copy is not adding signal. Consider stronger voiceover, cleaner on-screen text or more intentional edit rhythm.',
+  },
+  'Emotional': {
+    high: 'Strong emotional response predicted — the creative generates genuine engagement, boosting long-term memorability.',
+    mid: 'Moderate emotional engagement. Adding a human element, storytelling beat or surprise moment could deepen connection.',
+    low: 'Low emotional response. The creative feels functional but not memorable. Find a human truth or emotional hook.',
+  },
+}
+
+function regionSignalInfo(name: string, value: number | null): string {
+  const thresholds = REGION_THRESHOLDS[name]
+  if (!thresholds || value === null) return REGION_EXPLAINERS[name] ?? ''
+  const level = value >= 75 ? 'high' : value >= 50 ? 'mid' : 'low'
+  const label = value >= 75 ? '≥75% — High' : value >= 50 ? '50–74% — Moderate' : '<50% — Low'
+  return `Threshold: ≥75 High · 50–74 Moderate · <50 Low\nYour score: ${value.toFixed(1)}% (${label})\n\n${thresholds[level]}`
+}
+
 interface HistAvg {
   attention: number
   approvalRate: number
@@ -73,8 +104,7 @@ interface Props {
   // history / lifecycle panel state
   isLoadingHistory: boolean
   historySummaries: HistorySummary[]
-  lifecycleTab: 'benchmark' | 'ab'
-  setLifecycleTab: (tab: 'benchmark' | 'ab') => void
+  lifecycleTab: 'ab'
   histAvg: HistAvg | null
   abResultA: DiagnosticResult | null
   abResultB: DiagnosticResult | null
@@ -121,8 +151,7 @@ export function DiagnosticsPanel({
   regionMetrics,
   isLoadingHistory,
   historySummaries,
-  lifecycleTab,
-  setLifecycleTab,
+  lifecycleTab: _lifecycleTab,
   histAvg,
   abResultA,
   abResultB,
@@ -496,9 +525,11 @@ export function DiagnosticsPanel({
                       </div>
                     }
                     back={
-                      <div className="rounded-lg px-2 py-1.5">
-                        <p className="mb-1 pr-5 text-[10px] font-bold uppercase tracking-widest text-gray-500">{metric.name}</p>
-                        <p className="pr-5 text-[11px] leading-snug text-gray-200">{REGION_EXPLAINERS[metric.name] ?? RESULT_EXPLAINERS.neural}</p>
+                      <div className="rounded-lg px-2 py-1.5 space-y-1.5">
+                        <p className="pr-5 text-[10px] font-bold uppercase tracking-widest text-gray-500">{metric.name}</p>
+                        {regionSignalInfo(metric.name, metric.value).split('\n').map((line, i) => (
+                          <p key={i} className={`pr-5 leading-snug ${i === 0 ? 'text-[9px] text-gray-500' : i === 1 ? 'text-[10px] font-bold text-white' : 'text-[11px] text-gray-200'}`}>{line}</p>
+                        ))}
                       </div>
                     }
                   />
@@ -665,149 +696,51 @@ export function DiagnosticsPanel({
           )}
         </>
       ) : activeSection === 'lifecycle' ? (
-        <>
-          {/* Tab switcher */}
-          <div className="flex rounded-lg border border-white/10 overflow-hidden mb-1">
-            {(['benchmark', 'ab'] as const).map((tab) => (
-              <button key={tab} type="button" onClick={() => setLifecycleTab(tab)}
-                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${
-                  lifecycleTab === tab ? 'bg-seedtag-coral text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                }`}>
-                {tab === 'benchmark' ? 'Benchmark' : 'A/B Compare'}
-              </button>
-            ))}
-          </div>
-
-          {lifecycleTab === 'benchmark' ? (
-            isLoadingHistory ? (
-              <div className="flex items-center justify-center py-12 text-gray-500 text-sm">Loading…</div>
-            ) : !diagnosticResult ? (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
-                <TrendingUp size={28} className="mx-auto mb-3 text-gray-600" />
-                <p className="text-sm font-bold text-gray-400">No current diagnostic</p>
-                <p className="mt-1 text-xs text-gray-600">Run an analysis first to compare against history.</p>
-              </div>
-            ) : histAvg === null ? (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
-                <p className="text-sm font-bold text-gray-400">No history yet</p>
-                <p className="mt-1 text-xs text-gray-600">Run more analyses to build a benchmark baseline.</p>
-              </div>
-            ) : (
-              <section className="space-y-3">
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-1">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    vs. average of {historySummaries.length} past run{historySummaries.length !== 1 ? 's' : ''}
-                  </p>
-                  {[
-                    { label: 'Attention', current: diagnosticResult.attention_score, avg: histAvg.attention, unit: '%', higherIsBetter: true },
-                    { label: 'Approval rate', current: diagnosticResult.final_decision.approved ? 100 : 0, avg: histAvg.approvalRate, unit: '%', higherIsBetter: true },
-                    { label: 'Frames analyzed', current: diagnosticResult.frames_analyzed, avg: histAvg.frames, unit: '', higherIsBetter: true },
-                  ].map(({ label, current, avg, unit, higherIsBetter }) => (
-                    <div key={label} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{label}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-white">{current.toFixed(1)}{unit}</span>
-                        <span className="text-[10px] text-gray-600">avg {avg.toFixed(1)}{unit}</span>
-                        <DeltaBadge current={current} avg={avg} higherIsBetter={higherIsBetter} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-2">Strategy distribution</p>
-                  {Array.from(new Set(historySummaries.map(h => h.strategy_category))).map(cat => {
-                    const count = historySummaries.filter(h => h.strategy_category === cat).length
-                    const pct = (count / historySummaries.length) * 100
-                    return (
-                      <div key={cat} className="mb-1.5">
-                        <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className={`font-bold ${diagnosticResult.final_decision.strategy_category === cat ? 'text-seedtag-coral' : 'text-gray-400'}`}>
-                            {cat} {diagnosticResult.final_decision.strategy_category === cat ? '← current' : ''}
-                          </span>
-                          <span className="text-gray-500">{count} run{count !== 1 ? 's' : ''}</span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-white/10">
-                          <div className="h-1.5 rounded-full bg-seedtag-coral/60" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-            )
+        <section className="space-y-3">
+          {isLoadingHistory ? (
+            <div className="flex items-center justify-center py-8 text-gray-500 text-sm">Loading…</div>
+          ) : historySummaries.length < 2 ? (
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+              <p className="text-sm font-bold text-gray-400">Need at least 2 past runs</p>
+              <p className="mt-1 text-xs text-gray-600">Run more analyses to enable A/B comparison.</p>
+            </div>
           ) : (
-            /* A/B tab */
-            <section className="space-y-3">
-              {isLoadingHistory ? (
-                <div className="flex items-center justify-center py-8 text-gray-500 text-sm">Loading…</div>
-              ) : historySummaries.length < 2 ? (
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
-                  <p className="text-sm font-bold text-gray-400">Need at least 2 past runs</p>
-                  <p className="mt-1 text-xs text-gray-600">Run more analyses to enable A/B comparison.</p>
-                </div>
-              ) : (
-                <>
-                  {(['a', 'b'] as const).map((side) => (
-                    <div key={side} className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral">Creative {side.toUpperCase()}</p>
-                      <select
-                        value={side === 'a' ? abIdA : abIdB}
-                        onChange={(e) => {
-                          if (side === 'a') { setAbIdA(e.target.value); setAbResultA(null) }
-                          else { setAbIdB(e.target.value); setAbResultB(null) }
-                        }}
-                        className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[10px] text-white focus:outline-none focus:border-seedtag-coral/50"
-                      >
-                        <option value="">— Select a run —</option>
-                        {historySummaries.map(h => (
-                          <option key={h.request_id} value={h.request_id}>
-                            {h.filename} · {h.attention_score.toFixed(0)}% · {new Date(h.analyzed_at).toLocaleDateString()}
-                          </option>
-                        ))}
-                      </select>
-                      {(side === 'a' ? abIdA : abIdB) && !(side === 'a' ? abResultA : abResultB) && (
-                        <button type="button"
-                          onClick={() => loadAbResult(side === 'a' ? abIdA : abIdB, side)}
-                          disabled={side === 'a' ? abLoadingA : abLoadingB}
-                          className="w-full rounded border border-seedtag-coral/30 bg-seedtag-coral/10 py-1.5 text-[10px] font-bold text-seedtag-coral hover:bg-seedtag-coral/20 transition-all disabled:opacity-50"
-                        >
-                          {(side === 'a' ? abLoadingA : abLoadingB) ? 'Loading…' : 'Load Creative'}
-                        </button>
-                      )}
-                      {(side === 'a' ? abResultA : abResultB) && (
-                        <p className="text-[10px] text-emerald-400 font-bold">✓ Loaded</p>
-                      )}
-                    </div>
-                  ))}
-
-                  {abResultA && abResultB && (
-                    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                      <div className="grid grid-cols-3 gap-2 mb-2">
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Metric</span>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral text-center">A</span>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-blue-400 text-center">B</span>
-                      </div>
-                      <AbMetricRow label="Attention %" valA={abResultA.attention_score} valB={abResultB.attention_score} />
-                      <AbMetricRow label="Resonance" valA={abResultA.neural_resonance * 100} valB={abResultB.neural_resonance * 100} />
-                      <AbMetricRow label="Confidence" valA={abResultA.prediction_confidence * 100} valB={abResultB.prediction_confidence * 100} />
-                      <AbMetricRow label="Sensory load" valA={abResultA.sensory_load * 100} valB={abResultB.sensory_load * 100} higherIsBetter={false} />
-                      <AbMetricRow label="Brand voice" valA={abResultA.hybrid_flags.brand_voice_score * 100} valB={abResultB.hybrid_flags.brand_voice_score * 100} />
-                      <div className="grid grid-cols-3 gap-2 items-center pt-2 mt-1 border-t border-white/10">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Decision</span>
-                        <span className={`text-center text-[10px] font-bold ${abResultA.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {abResultA.final_decision.approved ? 'Approved' : 'Revision'}
-                        </span>
-                        <span className={`text-center text-[10px] font-bold ${abResultB.final_decision.approved ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {abResultB.final_decision.approved ? 'Approved' : 'Revision'}
-                        </span>
-                      </div>
-                    </div>
+            <>
+              {(['a', 'b'] as const).map((side) => (
+                <div key={side} className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-seedtag-coral">Creative {side.toUpperCase()}</p>
+                  <select
+                    value={side === 'a' ? abIdA : abIdB}
+                    onChange={(e) => {
+                      if (side === 'a') { setAbIdA(e.target.value); setAbResultA(null) }
+                      else { setAbIdB(e.target.value); setAbResultB(null) }
+                    }}
+                    className="w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[10px] text-white focus:outline-none focus:border-seedtag-coral/50"
+                  >
+                    <option value="">— Select a run —</option>
+                    {historySummaries.map(h => (
+                      <option key={h.request_id} value={h.request_id}>
+                        {h.filename} · {h.attention_score.toFixed(0)}% · {new Date(h.analyzed_at).toLocaleDateString()}
+                      </option>
+                    ))}
+                  </select>
+                  {(side === 'a' ? abIdA : abIdB) && !(side === 'a' ? abResultA : abResultB) && (
+                    <button type="button"
+                      onClick={() => loadAbResult(side === 'a' ? abIdA : abIdB, side)}
+                      disabled={side === 'a' ? abLoadingA : abLoadingB}
+                      className="w-full rounded border border-seedtag-coral/30 bg-seedtag-coral/10 py-1.5 text-[10px] font-bold text-seedtag-coral hover:bg-seedtag-coral/20 transition-all disabled:opacity-50"
+                    >
+                      {(side === 'a' ? abLoadingA : abLoadingB) ? 'Loading…' : 'Load Creative'}
+                    </button>
                   )}
-                </>
-              )}
-            </section>
+                  {(side === 'a' ? abResultA : abResultB) && (
+                    <p className="text-[10px] text-emerald-400 font-bold">✓ Loaded</p>
+                  )}
+                </div>
+              ))}
+            </>
           )}
-        </>
+        </section>
       ) : (
         /* Config / else */
         <>
