@@ -91,11 +91,10 @@
 #### Bloque 5 — Lifecycle y motor
 - [x] **Step 6.12: Integrar modelo de visión real (CLIP)**
 - [x] **Step ENGINE-001: TRIBE v2 Meta AI** como segundo motor de inferencia (selector en Config + badge en sidebar)
-- [ ] **Step 6.13: Lifecycle completo del creative**
-    - Modo "Benchmark": comparar un nuevo creative contra históricos del mismo anunciante/categoría.
-    - Modo "A/B": analizar dos videos en paralelo y generar reporte comparativo.
-    - Modo "Post-campaña": importar métricas reales (viewability, CTR) y cruzarlas con los scores predichos para calibrar el modelo.
-    - Base: requiere historial (6.9 ✅) y motor real (6.12 ✅).
+- [x] **Step 6.13: Lifecycle completo del creative**
+    - A/B: selector de 2 runs, winner banner, side-by-side bars, full comparison table.
+    - Benchmark: rank (#N of M), Δ vs. avg, SVG distribution chart, metric breakdown.
+    - Post-Campaign: inputs CTR/viewability por run (localStorage), calibration badge, model calibration % summary.
 
 #### Bloque 6 — Seguridad e infraestructura (antes de cualquier deploy)
 - [x] **Step 6.3: Auth en la API** (`api_key_middleware` con `NEURALSEED_API_KEY` env var — transparente en dev)
