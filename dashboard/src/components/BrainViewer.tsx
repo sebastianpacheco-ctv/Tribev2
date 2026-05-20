@@ -83,16 +83,12 @@ const REGIONS: RegionMeta[] = [
 export { REGIONS }
 export type { RegionMeta }
 
-function getRegionIndexForPoint(nx: number, ny: number): number {
-  // Zones match badge positions in the viewport:
-  // Prefrontal badge: top center (py=9)   → top particles
-  // Visual badge:     bottom center (py=88)→ bottom particles
-  // Temporal badge:   left side (px=16)   → left hemisphere
-  // Emotional badge:  right side (px=84)  → right hemisphere
-  if (ny > 0.28)             return 0  // top cap    → Prefrontal
-  if (ny < -0.28)            return 1  // bottom cap → Visual
-  if (nx < 0)                return 2  // left half  → Temporal
-  return 3                             // right half → Emotional
+function getRegionIndexForPoint(nx: number, _ny: number, nz: number): number {
+  // Anatomically correct: z axis = anterior-posterior, x axis = lateral
+  if (nz > 0.28)             return 0  // anterior   → Prefrontal Cortex
+  if (nz < -0.28)            return 1  // posterior  → Visual Cortex
+  if (Math.abs(nx) > 0.40)   return 2  // lateral    → Temporal
+  return 3                             // medial/inf  → Limbic/Emotional
 }
 
 // Simplex-like noise using sin/cos harmonics
@@ -140,12 +136,12 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
 
   // ── STABLE geometry — only recomputed once ──────────────────────────
   // Stores positions + per-point region index + deterministic jitter
-  const [positions, regionIdxBuf, jitterBuf, sxBuf, syBuf] = useMemo(() => {
+  const [positions, regionIdxBuf, jitterBuf, sxBuf, szBuf] = useMemo(() => {
     const pos  = new Float32Array(count * 3)
     const rIdx = new Uint8Array(count)
     const jit  = new Float32Array(count)   // deterministic hue jitter
-    const sxB  = new Float32Array(count)   // original sphere x (for activeRegion filter)
-    const syB  = new Float32Array(count)
+    const sxB  = new Float32Array(count)   // original sphere x (lateral axis)
+    const szB  = new Float32Array(count)   // original sphere z (anterior-posterior axis)
 
     const W = 3.0, H = 2.2, D = 3.8
 
@@ -166,10 +162,10 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
       // 3. Gyri wrinkles
       const g = brainNoise(sx * 5.5, sy * 5.5, sz * 5.5) * 0.22
       x += g * sx; y += g * sy * 0.7; z += g * sz
-      // 4. Frontal bulge
-      if (sx > 0.2) { const b = (sx - 0.2) * 0.4; x += b * 0.5; y += b * 0.2 }
-      // 5. Occipital bump
-      if (sx < -0.3 && Math.abs(sy) < 0.5) x -= 0.25
+      // 4. Frontal bulge (anterior — toward viewer along z)
+      if (sz > 0.25) { const b = (sz - 0.25) * 0.4; z += b * 0.5; y += b * 0.15 }
+      // 5. Occipital bump (posterior)
+      if (sz < -0.3 && Math.abs(sx) < 0.5) z -= 0.25
       // 6. Temporal bulge
       if (Math.abs(sy) > 0.2 && Math.abs(sz) > 0.4 && sx < 0.1) {
         const tb = (Math.abs(sy) - 0.2) * 0.3
@@ -185,12 +181,12 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
       z += (seed3 - Math.floor(seed3) - 0.5) * sc
 
       pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z
-      rIdx[i] = getRegionIndexForPoint(sx, sy)
+      rIdx[i] = getRegionIndexForPoint(sx, sy, sz)
       jit[i]  = (seed - Math.floor(seed) - 0.5) * 0.06  // [-0.03, 0.03]
       sxB[i]  = sx
-      syB[i]  = sy
+      szB[i]  = sz
     }
-    return [pos, rIdx, jit, sxB, syB]
+    return [pos, rIdx, jit, sxB, szB]
   }, [count])
 
   // ── REACTIVE colors — recompute on highlight/activation change ───────
@@ -201,7 +197,7 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
 
     for (let i = 0; i < count; i++) {
       const rIdx  = regionIdxBuf[i]
-      const sx = sxBuf[i], sy = syBuf[i]
+      const sx = sxBuf[i], sz = szBuf[i]
 
       if (regionActivations) {
         if (highlightIdx >= 0) {
@@ -221,10 +217,10 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
         let intensity = 0.08
         if (
           activeRegion === 'all' ||
-          (activeRegion === 'frontal'   && sy > 0.28) ||
-          (activeRegion === 'visual'    && sy < -0.28) ||
-          (activeRegion === 'temporal'  && sx < 0 && Math.abs(sy) <= 0.28) ||
-          (activeRegion === 'emotional' && sx >= 0 && Math.abs(sy) <= 0.28)
+          (activeRegion === 'frontal'   && sz > 0.28) ||
+          (activeRegion === 'visual'    && sz < -0.28) ||
+          (activeRegion === 'temporal'  && Math.abs(sx) > 0.40 && !(sz > 0.28 || sz < -0.28)) ||
+          (activeRegion === 'emotional' && !(sz > 0.28 || sz < -0.28 || Math.abs(sx) > 0.40))
         ) {
           intensity = activationLevel * 0.7 + 0.15
         }
@@ -242,7 +238,7 @@ function BrainPointCloud({ activationLevel = 0.5, activeRegion = 'all', regionAc
       cols[i * 3] = color.r; cols[i * 3 + 1] = color.g; cols[i * 3 + 2] = color.b
     }
     return cols
-  }, [count, regionIdxBuf, jitterBuf, sxBuf, syBuf, activationLevel, activeRegion, regionActivations, highlightIdx, approved, decorative])
+  }, [count, regionIdxBuf, jitterBuf, sxBuf, szBuf, activationLevel, activeRegion, regionActivations, highlightIdx, approved, decorative])
 
   useFrame((state) => {
     if (decorative) {
