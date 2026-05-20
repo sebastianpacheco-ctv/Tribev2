@@ -1169,6 +1169,8 @@ export default function DashboardPage() {
                 setAbResultA={setAbResultA}
                 setAbResultB={setAbResultB}
                 loadAbResult={loadAbResult}
+                diagnosticResult={diagnosticResult}
+                histAvg={histAvg}
               />
             )}
 
