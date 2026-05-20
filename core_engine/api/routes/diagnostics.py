@@ -26,10 +26,12 @@ from core_engine.api.schemas.diagnostics import (
 )
 from core_engine.models.inference import TribeInferenceEngine
 from core_engine.models.insights import InsightGenerator
+from core_engine.models.tribe_inference import TribeV2InferenceEngine
 from core_engine.processors.video import VideoProcessor
 
 router = APIRouter()
-engine = TribeInferenceEngine()
+engine = TribeInferenceEngine()          # CLIP-based engine (default)
+engine_tribe = TribeV2InferenceEngine()  # Meta TRIBE v2 foundation model
 insight_gen = InsightGenerator()
 TMP_ROOT = Path("tmp/diagnostics")
 TMP_MAX_AGE_HOURS = 24
@@ -609,9 +611,23 @@ async def analyze_creative(background_tasks: BackgroundTasks, request: VideoInfe
             actual_fps = frame_rate
 
     format_type = request.format_type or "bespoke"
-    stimuli_for_inference = _preprocess_stimuli_for_format(stimuli, format_type) if not _is_image_file(video_path) else stimuli
-    inference_result = await asyncio.to_thread(engine.predict, stimuli_for_inference)
-    frame_insights_data = await asyncio.to_thread(engine.predict_frame_sequence, stimuli_for_inference, actual_fps)
+    use_tribe = (
+        request.engine_type == "tribe"
+        and not _is_image_file(video_path)
+        and engine_tribe.is_available()
+    )
+
+    if use_tribe:
+        inference_result = await asyncio.to_thread(
+            engine_tribe.predict_from_video_path, str(video_path)
+        )
+        frame_insights_data = await asyncio.to_thread(
+            engine_tribe.predict_frame_sequence_from_video_path, str(video_path), frame_rate
+        )
+    else:
+        stimuli_for_inference = _preprocess_stimuli_for_format(stimuli, format_type) if not _is_image_file(video_path) else stimuli
+        inference_result = await asyncio.to_thread(engine.predict, stimuli_for_inference)
+        frame_insights_data = await asyncio.to_thread(engine.predict_frame_sequence, stimuli_for_inference, actual_fps)
 
     try:
         gemini_explanation_str = await insight_gen.generate_explanation(inference_result)
@@ -645,6 +661,7 @@ async def analyze_creative(background_tasks: BackgroundTasks, request: VideoInfe
         "frame_rate": frame_rate,
         "analysis_depth": request.analysis_depth,
         "format_type": format_type,
+        "engine_type": "tribe" if use_tribe else "clip",
         "frames_extracted": len(frame_paths),
         "analyzed_at": analyzed_at,
     }

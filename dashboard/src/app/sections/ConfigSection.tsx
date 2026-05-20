@@ -13,6 +13,8 @@ interface Props {
   isAnalyzing: boolean
   setAnalysisProfile: (depth: AnalysisDepth, fps: number) => void
   resetSession: () => void
+  engineType: 'clip' | 'tribe'
+  setEngineType: (e: 'clip' | 'tribe') => void
 }
 
 export function ConfigSection({
@@ -22,6 +24,8 @@ export function ConfigSection({
   isAnalyzing,
   setAnalysisProfile,
   resetSession,
+  engineType,
+  setEngineType,
 }: Props) {
   return (
     <div className="flex-1 max-w-3xl mx-auto w-full space-y-6 py-2">
@@ -82,6 +86,48 @@ export function ConfigSection({
                   <span className="text-[10px] font-bold text-seedtag-coral">{profile.fps} fps</span>
                 </div>
                 <p className="text-[10px] leading-relaxed text-gray-400">{profile.detail}</p>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Inference Engine */}
+      <section>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">Inference Engine</p>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            {
+              id: 'clip' as const,
+              label: 'CLIP Heuristic',
+              badge: 'Default',
+              detail: 'OpenCLIP zero-shot scoring. Fast, no GPU required.',
+            },
+            {
+              id: 'tribe' as const,
+              label: 'TRIBE v2',
+              badge: 'Meta AI',
+              detail: 'Real fMRI brain predictions via cortical vertex model. Video only.',
+            },
+          ].map((eng) => {
+            const selected = engineType === eng.id
+            return (
+              <button
+                key={eng.id}
+                type="button"
+                onClick={() => setEngineType(eng.id)}
+                disabled={isUploading || isAnalyzing}
+                className={`rounded-xl border p-4 text-left transition-all disabled:opacity-50 ${
+                  selected
+                    ? 'border-seedtag-coral/40 bg-seedtag-coral/15'
+                    : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-white">{eng.label}</span>
+                  <span className={`text-[10px] font-bold ${selected ? 'text-seedtag-coral' : 'text-gray-500'}`}>{eng.badge}</span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-gray-400">{eng.detail}</p>
               </button>
             )
           })}

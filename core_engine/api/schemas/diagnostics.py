@@ -65,6 +65,7 @@ class VideoInferenceRequest(BaseModel):
     frame_rate: float = 1.0
     analysis_depth: str = "standard"
     format_type: str = "bespoke"  # "bespoke" | "frame" | "standard_video"
+    engine_type: str = "clip"  # "clip" | "tribe"
 
 class UploadVideoResponse(BaseModel):
     request_id: str

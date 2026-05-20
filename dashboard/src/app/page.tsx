@@ -207,6 +207,7 @@ export default function DashboardPage() {
   const [analysisDepth, setAnalysisDepth] = useState<AnalysisDepth>('standard')
   const [frameRate, setFrameRate] = useState(2)
   const [formatType, setFormatType] = useState<'bespoke' | 'frame' | 'standard_video'>('bespoke')
+  const [engineType, setEngineType] = useState<'clip' | 'tribe'>('clip')
   const [reviewDecisions, setReviewDecisions] = useState<Partial<Record<HybridReviewKey, ReviewDecision>>>({})
   const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | null>(null)
   const [heatmapEnabled, setHeatmapEnabled] = useState(true)
@@ -464,7 +465,7 @@ export default function DashboardPage() {
       const response = await fetch(`${DIAGNOSTICS_API_BASE}/analyze`, {
         method: 'POST',
         headers: apiHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ request_id: currentUpload.request_id, frame_rate: frameRate, analysis_depth: analysisDepth, format_type: formatType }),
+        body: JSON.stringify({ request_id: currentUpload.request_id, frame_rate: frameRate, analysis_depth: analysisDepth, format_type: formatType, engine_type: engineType }),
       })
       if (!response.ok) throw new Error(await extractErrorMessage(response))
       const data = (await response.json()) as DiagnosticResult
@@ -833,6 +834,14 @@ export default function DashboardPage() {
                 </span>
               </div>
 
+              {/* Engine badge */}
+              <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
+                <span className="text-[9px] text-gray-500 uppercase tracking-widest">Engine</span>
+                <span className={`text-[10px] font-bold ${engineType === 'tribe' ? 'text-violet-400' : 'text-gray-300'}`}>
+                  {engineType === 'tribe' ? 'TRIBE v2 (Meta)' : 'CLIP Heuristic'}
+                </span>
+              </div>
+
               {/* Actions */}
               <div className="space-y-2 pt-1">
                 {diagnosticResult && (
@@ -1195,6 +1204,8 @@ export default function DashboardPage() {
                 isAnalyzing={isAnalyzing}
                 setAnalysisProfile={setAnalysisProfile}
                 resetSession={resetSession}
+                engineType={engineType}
+                setEngineType={setEngineType}
               />
             )}
 
