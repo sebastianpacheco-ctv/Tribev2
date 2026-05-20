@@ -76,43 +76,29 @@
     - Videos de referencia analizados: Frame 1-3, Standard 1-2, Bespoke en `Videos examples/`.
 
 #### Bloque 3 — Features de valor (completan el producto)
-- [ ] **Step 6.15: UX de markers — pausa automática y overlay en video**
-    - Al hacer click en un marker del timeline, pausar el video automáticamente (fix en `VideoCortex.tsx` dentro del `onClick` del marker dot, antes de llamar `onMarkerClick`).
-    - Mostrar un badge overlay encima del video cuando hay un marker activo: color del marker (rojo/ámbar), timestamp y tipo. Mismo estilo `bg-black/40 backdrop-blur-md` que los chips existentes del player.
-- [ ] **Step 6.16: Attention Timeline Chart**
-    - Gráfico de área SVG (sin dependencias externas) debajo del video en el main content.
-    - Eje X: segundos del video. Curva principal: `attention_score` (coral, área rellena con gradiente). Línea secundaria: `sensory_load` (ámbar). Línea de referencia dashed en y=75 (umbral de marker). Dots clicables en posición de markers (rojo/ámbar) — click = seek + activar marker. Tooltip en hover con timestamp, score, load y dominant region.
-    - Implementado como SVG custom en React, cero deps nuevas.
-- [ ] **Step 6.2: Markers en PDF**
-    - Incluir decisiones OK/Flag y notas del Human Gate en el PDF exportado.
-    - Agregar sección "Frame Review" en `createDiagnosticPdf` en `page.tsx`.
-- [ ] **Step 6.9: Historial de diagnósticos (vista de carpetas)**
-    - Backend: persistir `DiagnosticResult` en JSON/SQLite por `request_id` al finalizar análisis.
-    - Nuevo endpoint `GET /diagnostics` que lista los resultados guardados.
-    - Vista en dashboard: lista con fecha, nombre de archivo, attention score, decisión final.
-    - Click en resultado → carga el diagnóstico sin re-analizar.
+- [x] **Step 6.15: UX de markers — pausa automática y overlay en video**
+- [x] **Step 6.16: Attention Timeline Chart** (`AttentionChart.tsx` — SVG custom, cero deps)
+- [x] **Step 6.2: Markers en PDF** (PAGE 5 en `pdf.ts` — decisiones OK/Flag + notas)
+- [x] **Step 6.9: Historial de diagnósticos**
+    - Backend: `result.json` persistido por `request_id`, `GET /` + `GET /{id}` endpoints
+    - Frontend: `loadHistoryEntry`, search + filter pills, edit mode, delete + backup ZIP
 
 #### Bloque 4 — Visual (impacto estético, complejidad alta)
-- [ ] **Step 6.1: BrainViewer Anatómico**
-    - Reemplazar esfera de partículas por forma matemática de cerebro.
-    - Zonas activas en posición anatómica: frontal adelante, visual atrás, temporal lateral.
+- [x] **Step 6.1: BrainViewer Anatómico**
+    - Partículas clasificadas por eje z (anterior-posterior): frontal = sz > 0.28, visual = sz < -0.28, temporal = |sx| > 0.40, emotional = medial.
+    - Deformaciones de forma corregidas: bulge frontal hacia el viewer (+z), occipital bump hacia atrás (-z).
 
 #### Bloque 5 — Lifecycle y motor
 - [x] **Step 6.12: Integrar modelo de visión real (CLIP)**
-    - Reemplazar `TribeInferenceEngine` mock por `open_clip` (ViT-B/32 o similar).
-    - Los scores de atención, sensory_load y region_activations pasarían a ser predicciones reales basadas en embeddings visuales.
-    - Pipeline ya construido — solo cambia el módulo de inferencia en `core_engine/models/inference.py`.
-    - Dependencias: `open-clip-torch`, `torch` (CPU suficiente para análisis de frames estáticos).
+- [x] **Step ENGINE-001: TRIBE v2 Meta AI** como segundo motor de inferencia (selector en Config + badge en sidebar)
 - [ ] **Step 6.13: Lifecycle completo del creative**
     - Modo "Benchmark": comparar un nuevo creative contra históricos del mismo anunciante/categoría.
     - Modo "A/B": analizar dos videos en paralelo y generar reporte comparativo.
     - Modo "Post-campaña": importar métricas reales (viewability, CTR) y cruzarlas con los scores predichos para calibrar el modelo.
-    - Base: requiere historial de diagnósticos (6.9) y motor real (6.12).
+    - Base: requiere historial (6.9 ✅) y motor real (6.12 ✅).
 
 #### Bloque 6 — Seguridad e infraestructura (antes de cualquier deploy)
-- [ ] **Step 6.3: Auth en la API**
-    - Middleware FastAPI con API key en header.
-    - Necesario antes de exponer en cualquier red.
+- [x] **Step 6.3: Auth en la API** (`api_key_middleware` con `NEURALSEED_API_KEY` env var — transparente en dev)
 - [ ] **Step 6.4: Next.js 15/16 migration**
     - 5 vulnerabilidades restantes en npm audit.
     - Migración mayor — hacer en rama separada.
